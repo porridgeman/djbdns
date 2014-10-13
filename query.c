@@ -12,6 +12,7 @@
 #include "alloc.h"
 #include "response.h"
 #include "query.h"
+#include <stdio.h>
 
 static int flagforwardonly = 0;
 
@@ -110,14 +111,31 @@ static int rqa(struct query *z)
   return 1;
 }
 
-static int globalip(char *d,char ip[4])
+static int handledn(char *d,char *dn,char ip[4],char newip[4])
 {
-  if (dns_domain_equal(d,"\011localhost\0")) {
-    byte_copy(ip,4,"\177\0\0\1");
+  if (dns_domain_equal(d,dn)) {
+    byte_copy(ip,4,newip);
     return 1;
   }
+
   if (dd(d,"",ip) == 4) return 1;
   return 0;
+}
+
+/*
+ * If DN is localhost, respond with loopback address.
+ */
+static int globalip(char *d,char ip[4])
+{
+  return handledn(d, "\011localhost\0", ip, "\177\0\0\1");
+}
+
+/*
+ * If DN is myip.opendns.com, respond with source address.
+ */
+static int myip(char *d,char ip[4],char sourceip[4])
+{
+  return handledn(d, "\04myip\07opendns\03com\0", ip, sourceip);
 }
 
 static char *t1 = 0;
@@ -212,14 +230,33 @@ static int doit(struct query *z,int state)
     if (z->level) {
       for (k = 0;k < 64;k += 4)
         if (byte_equal(z->servers[z->level - 1] + k,4,"\0\0\0\0")) {
-	  byte_copy(z->servers[z->level - 1] + k,4,misc);
-	  break;
-	}
+	        byte_copy(z->servers[z->level - 1] + k,4,misc);
+    	  break;
+    	}
       goto LOWERLEVEL;
     }
     if (!rqa(z)) goto DIE;
     if (typematch(DNS_T_A,dtype)) {
       if (!response_rstart(d,DNS_T_A,655360)) goto DIE;
+      if (!response_addbytes(misc,4)) goto DIE;
+      response_rfinish(RESPONSE_ANSWER);
+    }
+    cleanup(z);
+    return 1;
+  }
+
+  if (myip(d,misc,z->ip)) {
+    if (z->level) {
+      for (k = 0;k < 64;k += 4)
+        if (byte_equal(z->servers[z->level - 1] + k,4,"\0\0\0\0")) {
+          byte_copy(z->servers[z->level - 1] + k,4,misc);
+        break;
+      }
+      goto LOWERLEVEL;
+    }
+    if (!rqa(z)) goto DIE;
+    if (typematch(DNS_T_A,dtype)) {
+      if (!response_rstart(d,DNS_T_A,0)) goto DIE;
       if (!response_addbytes(misc,4)) goto DIE;
       response_rfinish(RESPONSE_ANSWER);
     }
@@ -818,7 +855,7 @@ static int doit(struct query *z,int state)
   return -1;
 }
 
-int query_start(struct query *z,char *dn,char type[2],char class[2],char localip[4])
+int query_start(struct query *z,char *dn,char type[2],char class[2],char ip[4],char localip[4])
 {
   if (byte_equal(type,2,DNS_T_AXFR)) { errno = error_perm; return -1; }
 
@@ -830,6 +867,7 @@ int query_start(struct query *z,char *dn,char type[2],char class[2],char localip
   byte_copy(z->type,2,type);
   byte_copy(z->class,2,class);
   byte_copy(z->localip,4,localip);
+  byte_copy(z->ip,4,ip);
 
   return doit(z,0);
 }
