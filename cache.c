@@ -4,6 +4,7 @@
 #include "exit.h"
 #include "tai.h"
 #include "cache.h"
+#include <stdio.h>
 
 uint64 cache_motion = 0;
 
@@ -77,16 +78,12 @@ static unsigned int hash(const char *key,unsigned int keylen)
   return result;
 }
 
-char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
+static uint32 find_entry(const char *key,unsigned int keylen,uint32 *prev,uint32 *next)
 {
-  struct tai expire;
-  struct tai now;
   uint32 pos;
   uint32 prevpos;
   uint32 nextpos;
-  uint32 u;
   unsigned int loop;
-  double d;
 
   if (!x) return 0;
   if (keylen > MAXKEYLEN) return 0;
@@ -99,20 +96,11 @@ char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32
     if (get4(pos + 4) == keylen) {
       if (pos + 20 + keylen > size) cache_impossible();
       if (byte_equal(key,keylen,x + pos + 20)) {
-        tai_unpack(x + pos + 12,&expire);
-        tai_now(&now);
-        if (tai_less(&expire,&now)) return 0;
 
-        tai_sub(&expire,&expire,&now);
-        d = tai_approx(&expire);
-        if (d > 604800) d = 604800;
-        *ttl = d;
+        if (prev) *prev = prevpos;
+        if (next) *next = prevpos ^ get4(pos);
 
-        u = get4(pos + 8);
-        if (u > size - pos - 20 - keylen) cache_impossible();
-        *datalen = u;
-
-        return x + pos + 20 + keylen;
+        return pos;
       }
     }
     nextpos = prevpos ^ get4(pos);
@@ -122,6 +110,72 @@ char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32
   }
 
   return 0;
+}
+
+static void advance_oldest() {
+  oldest += get4(oldest + 4) + get4(oldest + 8) + 20;
+  if (oldest > unused) cache_impossible();
+  if (oldest == unused) {
+    unused = size;
+    oldest = size;
+  }
+}
+
+char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
+{
+  struct tai expire;
+  struct tai now;
+  uint32 pos;
+  uint32 u;
+  double d;
+
+  if (pos = find_entry(key,keylen,0,0)) {
+    tai_unpack(x + pos + 12,&expire);
+    tai_now(&now);
+    if (tai_less(&expire,&now)) return 0;
+
+    tai_sub(&expire,&expire,&now);
+    d = tai_approx(&expire);
+    if (d > 604800) d = 604800;
+    *ttl = d;
+
+    u = get4(pos + 8);
+    if (u > size - pos - 20 - keylen) cache_impossible();
+    *datalen = u;
+
+    return x + pos + 20 + keylen;
+  }
+
+  return 0;
+}
+
+void cache_delete(const char *key,unsigned int keylen)
+{
+  uint32 pos;
+  uint32 prev;
+  uint32 next;
+
+  /*
+   * Find all entries which match key and adjust links for adjacent entries.
+   */
+  while (pos = find_entry(key,keylen,&prev,&next)) {
+    
+    if (next) { 
+      set4(prev,get4(prev) ^ pos ^ next);
+      set4(next,get4(next) ^ pos ^ prev);
+    } else {
+      set4(prev,get4(prev) ^ pos);
+    }
+
+    /*
+     * Advance oldest if necessary. Leaving the deleted entry as oldest
+     * could cause incorrect update of the previous entry link when the 
+     * entry is reclaimed in the future.
+     */
+    if (pos == oldest) {
+      advance_oldest();
+    }
+  }
 }
 
 void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int datalen,uint32 ttl)
@@ -152,12 +206,7 @@ void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int
     pos = get4(oldest);
     set4(pos,get4(pos) ^ oldest);
   
-    oldest += get4(oldest + 4) + get4(oldest + 8) + 20;
-    if (oldest > unused) cache_impossible();
-    if (oldest == unused) {
-      unused = size;
-      oldest = size;
-    }
+    advance_oldest();
   }
 
   keyhash = hash(key,keylen);
