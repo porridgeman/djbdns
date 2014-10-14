@@ -7,12 +7,16 @@
 
 uint64 cache_motion = 0;
 
-static char *x = 0;
-static uint32 size;
-static uint32 hsize;
-static uint32 writer;
-static uint32 oldest;
-static uint32 unused;
+struct cache {
+  char *x;
+  uint32 size;
+  uint32 hsize;
+  uint32 writer;
+  uint32 oldest;
+  uint32 unused;
+};
+
+static cache_t default_cache;
 
 /*
 100 <= size <= 1000000000.
@@ -48,21 +52,21 @@ static void cache_impossible(void)
   _exit(111);
 }
 
-static void set4(uint32 pos,uint32 u)
+static void set4(struct cache *c, uint32 pos,uint32 u)
 {
-  if (pos > size - 4) cache_impossible();
-  uint32_pack(x + pos,u);
+  if (pos > c->size - 4) cache_impossible();
+  uint32_pack(c->x + pos,u);
 }
 
-static uint32 get4(uint32 pos)
+static uint32 get4(struct cache *c, uint32 pos)
 {
   uint32 result;
-  if (pos > size - 4) cache_impossible();
-  uint32_unpack(x + pos,&result);
+  if (pos > c->size - 4) cache_impossible();
+  uint32_unpack(c->x + pos,&result);
   return result;
 }
 
-static unsigned int hash(const char *key,unsigned int keylen)
+static unsigned int hash(struct cache *c,const char *key,unsigned int keylen)
 {
   unsigned int result = 5381;
 
@@ -73,11 +77,11 @@ static unsigned int hash(const char *key,unsigned int keylen)
     --keylen;
   }
   result <<= 2;
-  result &= hsize - 4;
+  result &= c->hsize - 4;
   return result;
 }
 
-char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
+char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
 {
   struct tai expire;
   struct tai now;
@@ -88,18 +92,21 @@ char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32
   unsigned int loop;
   double d;
 
-  if (!x) return 0;
+  struct cache *c = (struct cache *)cache;
+
+  if (!c) return 0;
+  if (!c->x) return 0;
   if (keylen > MAXKEYLEN) return 0;
 
-  prevpos = hash(key,keylen);
-  pos = get4(prevpos);
+  prevpos = hash(c,key,keylen);
+  pos = get4(c,prevpos);
   loop = 0;
 
   while (pos) {
-    if (get4(pos + 4) == keylen) {
-      if (pos + 20 + keylen > size) cache_impossible();
-      if (byte_equal(key,keylen,x + pos + 20)) {
-        tai_unpack(x + pos + 12,&expire);
+    if (get4(c,pos + 4) == keylen) {
+      if (pos + 20 + keylen > c->size) cache_impossible();
+      if (byte_equal(key,keylen,c->x + pos + 20)) {
+        tai_unpack(c->x + pos + 12,&expire);
         tai_now(&now);
         if (tai_less(&expire,&now)) return 0;
 
@@ -108,14 +115,14 @@ char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32
         if (d > 604800) d = 604800;
         *ttl = d;
 
-        u = get4(pos + 8);
-        if (u > size - pos - 20 - keylen) cache_impossible();
+        u = get4(c,pos + 8);
+        if (u > c->size - pos - 20 - keylen) cache_impossible();
         *datalen = u;
 
-        return x + pos + 20 + keylen;
+        return c->x + pos + 20 + keylen;
       }
     }
-    nextpos = prevpos ^ get4(pos);
+    nextpos = prevpos ^ get4(c,pos);
     prevpos = pos;
     pos = nextpos;
     if (++loop > 100) return 0; /* to protect against hash flooding */
@@ -124,7 +131,7 @@ char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32
   return 0;
 }
 
-void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int datalen,uint32 ttl)
+void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *data,unsigned int datalen,uint32 ttl)
 {
   struct tai now;
   struct tai expire;
@@ -132,7 +139,10 @@ void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int
   unsigned int keyhash;
   uint32 pos;
 
-  if (!x) return;
+  struct cache *c = (struct cache *)cache;
+
+  if (!c) return;
+  if (!c->x) return;
   if (keylen > MAXKEYLEN) return;
   if (datalen > MAXDATALEN) return;
 
@@ -141,67 +151,108 @@ void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int
 
   entrylen = keylen + datalen + 20;
 
-  while (writer + entrylen > oldest) {
-    if (oldest == unused) {
-      if (writer <= hsize) return;
-      unused = writer;
-      oldest = hsize;
-      writer = hsize;
+  while (c->writer + entrylen > c->oldest) {
+    if (c->oldest == c->unused) {
+      if (c->writer <= c->hsize) return;
+      c->unused = c->writer;
+      c->oldest = c->hsize;
+      c->writer = c->hsize;
     }
 
-    pos = get4(oldest);
-    set4(pos,get4(pos) ^ oldest);
+    pos = get4(c,c->oldest);
+    set4(c,pos,get4(c,pos) ^ c->oldest);
   
-    oldest += get4(oldest + 4) + get4(oldest + 8) + 20;
-    if (oldest > unused) cache_impossible();
-    if (oldest == unused) {
-      unused = size;
-      oldest = size;
+    c->oldest += get4(c,c->oldest + 4) + get4(c,c->oldest + 8) + 20;
+    if (c->oldest > c->unused) cache_impossible();
+    if (c->oldest == c->unused) {
+      c->unused = c->size;
+      c->oldest = c->size;
     }
   }
 
-  keyhash = hash(key,keylen);
+  keyhash = hash(c,key,keylen);
 
   tai_now(&now);
   tai_uint(&expire,ttl);
   tai_add(&expire,&expire,&now);
 
-  pos = get4(keyhash);
+  pos = get4(c,keyhash);
   if (pos)
-    set4(pos,get4(pos) ^ keyhash ^ writer);
-  set4(writer,pos ^ keyhash);
-  set4(writer + 4,keylen);
-  set4(writer + 8,datalen);
-  tai_pack(x + writer + 12,&expire);
-  byte_copy(x + writer + 20,keylen,key);
-  byte_copy(x + writer + 20 + keylen,datalen,data);
+    set4(c,pos,get4(c,pos) ^ keyhash ^ c->writer);
+  set4(c,c->writer,pos ^ keyhash);
+  set4(c,c->writer + 4,keylen);
+  set4(c,c->writer + 8,datalen);
+  tai_pack(c->x + c->writer + 12,&expire);
+  byte_copy(c->x + c->writer + 20,keylen,key);
+  byte_copy(c->x + c->writer + 20 + keylen,datalen,data);
 
-  set4(keyhash,writer);
-  writer += entrylen;
+  set4(c,keyhash,c->writer);
+  c->writer += entrylen;
   cache_motion += entrylen;
 }
 
-int cache_init(unsigned int cachesize)
+static int cache_t_init(struct cache *c, unsigned int cachesize)
 {
-  if (x) {
-    alloc_free(x);
-    x = 0;
+  if (c->x) {
+    alloc_free(c->x);
+    c->x = 0;
   }
 
   if (cachesize > 1000000000) cachesize = 1000000000;
   if (cachesize < 100) cachesize = 100;
-  size = cachesize;
+  c->size = cachesize;
 
-  hsize = 4;
-  while (hsize <= (size >> 5)) hsize <<= 1;
+  c->hsize = 4;
+  while (c->hsize <= (c->size >> 5)) c->hsize <<= 1;
 
-  x = alloc(size);
-  if (!x) return 0;
-  byte_zero(x,size);
+  c->x = alloc(c->size);
+  if (!c->x) return 0;
+  byte_zero(c->x,c->size);
 
-  writer = hsize;
-  oldest = size;
-  unused = size;
+  c->writer = c->hsize;
+  c->oldest = c->size;
+  c->unused = c->size;
 
   return 1;
+}
+
+cache_t cache_t_new(unsigned int cachesize) {
+
+  struct cache *c = (struct cache *)alloc(sizeof(struct cache));
+  byte_zero(c,sizeof(struct cache));
+
+  if (cache_t_init(c,cachesize)) {
+    return (cache_t)c;
+  }
+
+  return 0;
+}
+
+void cache_t_delete(cache_t cache) {
+
+  struct cache *c = (struct cache *)cache;
+
+  if (c->x) {
+    alloc_free(c->x);
+  }
+  alloc_free(c);
+}
+
+char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
+{
+  return cache_t_get(default_cache, key, keylen, datalen, ttl);
+}
+
+void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int datalen,uint32 ttl)
+{
+  cache_t_set(default_cache, key, keylen, data, datalen, ttl);
+}
+
+int cache_init(unsigned int cachesize) {
+
+  if (!default_cache) {
+    default_cache = cache_t_new(cachesize);
+  }
+
+  return cache_t_init(default_cache,cachesize);
 }
