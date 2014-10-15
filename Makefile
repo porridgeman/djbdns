@@ -607,6 +607,15 @@ okclient.o: \
 compile okclient.c str.h ip4.h okclient.h
 	./compile okclient.c
 
+okclienttest: \
+load okclienttest.o okclient.o cache.o libtai.a buffer.a alloc.a unix.a byte.a
+	./load okclienttest okclient.o cache.o libtai.a buffer.a alloc.a unix.a \
+	byte.a 
+
+okclienttest.o: \
+compile okclienttest.c str.h ip4.h okclient.h
+	./compile okclienttest.c
+
 open_read.o: \
 compile open_read.c open.h
 	./compile open_read.c
@@ -677,7 +686,7 @@ dnscache-conf dnscache walldns-conf walldns rbldns-conf rbldns \
 rbldns-data pickdns-conf pickdns pickdns-data tinydns-conf tinydns \
 tinydns-data tinydns-get tinydns-edit axfr-get axfrdns-conf axfrdns \
 dnsip dnsipq dnsname dnstxt dnsmx dnsfilter random-ip dnsqr dnsq \
-dnstrace dnstracesort cachetest utime rts
+dnstrace dnstracesort cachetest utime rts okclienttest
 
 prot.o: \
 compile prot.c hasshsgr.h prot.h
