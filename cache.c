@@ -107,8 +107,12 @@ char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int
       if (pos + 20 + keylen > c->size) cache_impossible();
       if (byte_equal(key,keylen,c->x + pos + 20)) {
         tai_unpack(c->x + pos + 12,&expire);
-        tai_now(&now);
-        if (tai_less(&expire,&now)) return 0;
+
+        /* if expire is 0, cache doesn't expire */
+        if (tai_approx(&expire)) {
+          tai_now(&now);
+          if (tai_less(&expire,&now)) return 0;
+        }
 
         tai_sub(&expire,&expire,&now);
         d = tai_approx(&expire);
@@ -146,7 +150,6 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
   if (keylen > MAXKEYLEN) return;
   if (datalen > MAXDATALEN) return;
 
-  if (!ttl) return;
   if (ttl > 604800) ttl = 604800;
 
   entrylen = keylen + datalen + 20;
@@ -172,9 +175,12 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
 
   keyhash = hash(c,key,keylen);
 
-  tai_now(&now);
+  /* if ttl is 0, cache doesn't expire */
   tai_uint(&expire,ttl);
-  tai_add(&expire,&expire,&now);
+  if (ttl) {
+    tai_now(&now);
+    tai_add(&expire,&expire,&now);
+  }
 
   pos = get4(c,keyhash);
   if (pos)
