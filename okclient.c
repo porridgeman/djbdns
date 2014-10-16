@@ -6,6 +6,7 @@
 #include "cache.h"
 #include "byte.h"
 #include <stdio.h>
+#include <dirent.h>
 
 #define CACHESIZE 1000000
 #define TTL 0
@@ -13,6 +14,22 @@ static int initialized = 0;
 static cache_t cache;
 
 static char fn[3 + IP4_FMT];
+
+static void load_cache()
+{
+  DIR  *d;
+  struct dirent *dir;
+  d = opendir("ip");
+  if (d) {
+    while ((dir = readdir(d)) != NULL) {
+      if (str_diff(dir->d_name,".") && str_diff(dir->d_name,"..")) {
+        char result = 1;
+        cache_t_set(cache,dir->d_name,str_len(dir->d_name),&result,sizeof(result),TTL);
+      }
+    }
+    closedir(d);
+  }
+}
 
 char *get_cached(char ip[4]) {
   char *cached;
@@ -26,12 +43,10 @@ char *get_cached(char ip[4]) {
   for (;;) {
     cached = cache_t_get(cache,fmt,str_len(fmt),&cachedlen,&ttl);
     if (cached) {
-      //printf("get succeeded for %s\n", fmt);
       return cached;
     }
     i = str_rchr(fmt,'.');
     if (!fmt[i]) {
-      //printf("get failed for %s\n", fmt);
       return 0;
     }
     fmt[i] = 0;
@@ -55,8 +70,8 @@ static int match_file(char ip[4])
 
       /* cache success */
       result = 1;
-      cache_t_set(cache,fn+3,str_len(fn+3),&result,sizeof(result),TTL);  // TODO same ttl for success and rejection?
-      //printf("  add success to cache %s\n",fn+3);fflush(stdout);
+      cache_t_set(cache,fn+3,str_len(fn+3),&result,sizeof(result),TTL);
+      printf("  add success to cache %s\n",fn+3);fflush(stdout);
       return result;
     }
     
@@ -68,7 +83,7 @@ static int match_file(char ip[4])
       result = 0;
       rejected[ip4_fmt(rejected,ip)] = 0;
       cache_t_set(cache,rejected,str_len(rejected),&result,sizeof(result),TTL);
-      //printf("  add rejection to cache %s\n",rejected);fflush(stdout);
+      printf("  add rejection to cache %s\n",rejected);fflush(stdout);
       
       return result;
     }
@@ -82,10 +97,11 @@ int okclient(char ip[4])
 
   if (!initialized) {
     cache = cache_t_new(CACHESIZE);
+    load_cache();
     initialized = 1;
   }
 
   cached = get_cached(ip);
-  //if (cached) printf("  got from cache %d.%d.%d.%d   %d\n", ip[0],ip[1],ip[2],ip[3],*cached);fflush(stdout);
+  if (cached) printf("  got from cache %d.%d.%d.%d   %d\n", ip[0],ip[1],ip[2],ip[3],*cached);fflush(stdout);
   return cached ? *cached : match_file(ip);
 }
