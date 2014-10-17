@@ -112,15 +112,6 @@ static uint32 find_entry(const char *key,unsigned int keylen,uint32 *prev,uint32
   return 0;
 }
 
-static void advance_oldest() {
-  oldest += get4(oldest + 4) + get4(oldest + 8) + 20;
-  if (oldest > unused) cache_impossible();
-  if (oldest == unused) {
-    unused = size;
-    oldest = size;
-  }
-}
-
 char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
 {
   struct tai expire;
@@ -160,7 +151,7 @@ void cache_delete(const char *key,unsigned int keylen)
    */
   while (pos = find_entry(key,keylen,&prev,&next)) {
     
-    if (next) { 
+    if (next) {
       set4(prev,get4(prev) ^ pos ^ next);
       set4(next,get4(next) ^ pos ^ prev);
     } else {
@@ -168,13 +159,11 @@ void cache_delete(const char *key,unsigned int keylen)
     }
 
     /*
-     * Advance oldest if necessary. Leaving the deleted entry as oldest
-     * could cause incorrect update of the previous entry link when the 
-     * entry is reclaimed in the future.
+     * Update link to point to this entry. This is so that when the entry
+     * eventually gets reclaimed as the oldest, no other link will get
+     * updated.
      */
-    if (pos == oldest) {
-      advance_oldest();
-    }
+    set4(pos,pos); 
   }
 }
 
@@ -206,7 +195,12 @@ void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int
     pos = get4(oldest);
     set4(pos,get4(pos) ^ oldest);
   
-    advance_oldest();
+    oldest += get4(oldest + 4) + get4(oldest + 8) + 20;
+    if (oldest > unused) cache_impossible();
+    if (oldest == unused) {
+      unused = size;
+      oldest = size;
+    }
   }
 
   keyhash = hash(key,keylen);
@@ -254,3 +248,4 @@ int cache_init(unsigned int cachesize)
 
   return 1;
 }
+
