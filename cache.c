@@ -107,6 +107,11 @@ static int init(struct cache *c, unsigned int cachesize)
   return 1;
 }
 
+/*
+ * Get entry from cache. Remaining time to live in seconds is return via ttl parameter.
+ * If stamp is not 0, it points to a struct tai containing the time to use as the
+ * current time for determining cache expiry (optimization to avoid system call).
+ */
 char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl,struct tai *stamp)
 {
   struct tai expire;
@@ -133,17 +138,8 @@ char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int
       if (pos + 20 + keylen > c->size) cache_impossible();
       if (byte_equal(key,keylen,c->x + pos + 20)) {
         tai_unpack(c->x + pos + 12,&expire);
-
-        /* if expire is 0, cache doesn't expire */
-        if (tai_approx(&expire)) {
-          /* use passed in timestamp, if available */
-          if (stamp) {
-            tai_uint(&now,stamp->x);
-          } else {
-            tai_now(&now);
-          }
-          if (tai_less(&expire,&now)) return 0;
-        }
+        tai_now(&now);
+        if (tai_less(&expire,&now)) return 0;
 
         tai_sub(&expire,&expire,&now);
         d = tai_approx(&expire);
@@ -166,6 +162,9 @@ char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int
   return 0;
 }
 
+/*
+ * Add entry to cache, ttl is time to live in seconds. 
+ */
 void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *data,unsigned int datalen,uint32 ttl)
 {
   struct tai now;
@@ -206,12 +205,9 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
 
   keyhash = hash(c,key,keylen);
 
-  /* if ttl is 0, cache doesn't expire */
+  tai_now(&now);
   tai_uint(&expire,ttl);
-  if (ttl) {
-    tai_now(&now);
-    tai_add(&expire,&expire,&now);
-  }
+  tai_add(&expire,&expire,&now);
 
   pos = get4(c,keyhash);
   if (pos)
@@ -231,10 +227,10 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
   }
 }
 
-int cache_t_init(cache_t cache, unsigned int cachesize) {
-  return init((struct cache *)cache, cachesize);
-}
-
+/*
+ * Create and return cache, cachesize is total size to allocate
+ * in bytes (not including size of struct cache)
+ */
 cache_t cache_t_new(unsigned int cachesize) {
 
   struct cache *c = (struct cache *)alloc(sizeof(struct cache));
@@ -247,6 +243,17 @@ cache_t cache_t_new(unsigned int cachesize) {
   return 0;
 }
 
+/*
+ * Re-initialize existing cache.
+ */
+int cache_t_init(cache_t cache, unsigned int cachesize) {
+  if (!cache) return 0;
+  return init((struct cache *)cache, cachesize);
+}
+
+/*
+ * Destroy cache, freeing all allocated memory.
+ */
 void cache_t_destroy(cache_t cache) {
 
   struct cache *c = (struct cache *)cache;
