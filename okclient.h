@@ -13,7 +13,7 @@ struct okclient_stats {
 
 extern int okclient(char *,struct taia *);
 
-extern void okclient_get_stats(struct okclient_stats *st);
+extern void okclient_get_stats(struct okclient_stats *);
 extern void okclient_clear_stats();
 extern void okclient_clear_cache();
 extern void okclient_load_cache();
