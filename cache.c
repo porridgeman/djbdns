@@ -247,7 +247,7 @@ cache_t cache_t_new(unsigned int cachesize) {
   return 0;
 }
 
-void cache_t_delete(cache_t cache) {
+void cache_t_destroy(cache_t cache) {
 
   struct cache *c = (struct cache *)cache;
 
