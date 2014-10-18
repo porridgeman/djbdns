@@ -13,10 +13,17 @@
 static int initialized = 0;
 static cache_t cache;
 
+static struct okclient_stats stats; /* static struct initialized to 0 */
+
 static char fn[3 + IP4_FMT];
 
 static void load_cache()
 {
+    if (!initialized) {
+    cache = cache_t_new(CACHESIZE);
+    initialized = 1;
+  }
+
   DIR  *d;
   struct dirent *dir;
   d = opendir("ip");
@@ -31,17 +38,18 @@ static void load_cache()
   }
 }
 
-char *get_cached(char ip[4]) {
+static char *get_cached(char ip[4],struct taia *start) {
   char *cached;
   unsigned int cachedlen;
   uint32 ttl;
   static char fmt[IP4_FMT];
   int i;
+  struct tai now;
 
   fmt[ip4_fmt(fmt,ip)] = 0;
 
   for (;;) {
-    cached = cache_t_get(cache,fmt,str_len(fmt),&cachedlen,&ttl);
+    cached = cache_t_get(cache,fmt,str_len(fmt),&cachedlen,&ttl,start ? &start->sec : 0);
     if (cached) {
       return cached;
     }
@@ -66,12 +74,13 @@ static int match_file(char ip[4])
   fn[3 + ip4_fmt(fn + 3,ip)] = 0;
 
   for (;;) {
+    stats.stat_calls++;
     if (stat(fn,&st) == 0) {
 
       /* cache success */
       result = 1;
       cache_t_set(cache,fn+3,str_len(fn+3),&result,sizeof(result),TTL);
-      printf("  add success to cache %s\n",fn+3);fflush(stdout);
+
       return result;
     }
     
@@ -83,7 +92,6 @@ static int match_file(char ip[4])
       result = 0;
       rejected[ip4_fmt(rejected,ip)] = 0;
       cache_t_set(cache,rejected,str_len(rejected),&result,sizeof(result),TTL);
-      printf("  add rejection to cache %s\n",rejected);fflush(stdout);
       
       return result;
     }
@@ -91,17 +99,45 @@ static int match_file(char ip[4])
   }
 }
 
-int okclient(char ip[4])
+static void clear_stats() {
+  byte_zero(&stats,sizeof(struct okclient_stats));
+}
+
+void okclient_get_stats(struct okclient_stats *st) {
+  byte_copy(st,sizeof(struct okclient_stats),&stats);
+}
+
+void okclient_clear_stats() {
+  clear_stats();
+}
+
+void okclient_clear_cache() {
+  if (!cache) return;
+  cache_t_init(cache,CACHESIZE);
+}
+
+void okclient_load_cache() {
+  load_cache();
+}
+
+int okclient(char ip[4],struct taia *start)
 {
   char *cached;
 
   if (!initialized) {
     cache = cache_t_new(CACHESIZE);
-    load_cache();
     initialized = 1;
   }
 
-  cached = get_cached(ip);
-  if (cached) printf("  got from cache %d.%d.%d.%d   %d\n", ip[0],ip[1],ip[2],ip[3],*cached);fflush(stdout);
-  return cached ? *cached : match_file(ip);
+  cached = get_cached(ip,start);
+
+  if (cached) {
+    stats.cache_hits++;
+    return *cached;
+  }
+
+  stats.cache_misses++;
+
+  return match_file(ip);
 }
+
