@@ -14,6 +14,7 @@ struct cache {
   uint32 writer;
   uint32 oldest;
   uint32 unused;
+  uint64 cache_motion;
 };
 
 static cache_t default_cache;
@@ -81,7 +82,32 @@ static unsigned int hash(struct cache *c,const char *key,unsigned int keylen)
   return result;
 }
 
-char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
+static int init(struct cache *c, unsigned int cachesize)
+{
+  if (c->x) {
+    alloc_free(c->x);
+    c->x = 0;
+  }
+
+  if (cachesize > 1000000000) cachesize = 1000000000;
+  if (cachesize < 100) cachesize = 100;
+  c->size = cachesize;
+
+  c->hsize = 4;
+  while (c->hsize <= (c->size >> 5)) c->hsize <<= 1;
+
+  c->x = alloc(c->size);
+  if (!c->x) return 0;
+  byte_zero(c->x,c->size);
+
+  c->writer = c->hsize;
+  c->oldest = c->size;
+  c->unused = c->size;
+
+  return 1;
+}
+
+char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl,struct tai *stamp)
 {
   struct tai expire;
   struct tai now;
@@ -110,7 +136,12 @@ char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int
 
         /* if expire is 0, cache doesn't expire */
         if (tai_approx(&expire)) {
-          tai_now(&now);
+          /* use passed in timestamp, if available */
+          if (stamp) {
+            tai_uint(&now,stamp->x);
+          } else {
+            tai_now(&now);
+          }
           if (tai_less(&expire,&now)) return 0;
         }
 
@@ -194,32 +225,14 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
 
   set4(c,keyhash,c->writer);
   c->writer += entrylen;
-  cache_motion += entrylen;
+  c->cache_motion += entrylen;
+  if (c == default_cache) {
+    cache_motion += entrylen;
+  }
 }
 
-static int cache_t_init(struct cache *c, unsigned int cachesize)
-{
-  if (c->x) {
-    alloc_free(c->x);
-    c->x = 0;
-  }
-
-  if (cachesize > 1000000000) cachesize = 1000000000;
-  if (cachesize < 100) cachesize = 100;
-  c->size = cachesize;
-
-  c->hsize = 4;
-  while (c->hsize <= (c->size >> 5)) c->hsize <<= 1;
-
-  c->x = alloc(c->size);
-  if (!c->x) return 0;
-  byte_zero(c->x,c->size);
-
-  c->writer = c->hsize;
-  c->oldest = c->size;
-  c->unused = c->size;
-
-  return 1;
+int cache_t_init(cache_t cache, unsigned int cachesize) {
+  return init((struct cache *)cache, cachesize);
 }
 
 cache_t cache_t_new(unsigned int cachesize) {
@@ -227,7 +240,7 @@ cache_t cache_t_new(unsigned int cachesize) {
   struct cache *c = (struct cache *)alloc(sizeof(struct cache));
   byte_zero(c,sizeof(struct cache));
 
-  if (cache_t_init(c,cachesize)) {
+  if (init(c,cachesize)) {
     return (cache_t)c;
   }
 
@@ -246,7 +259,7 @@ void cache_t_delete(cache_t cache) {
 
 char *cache_get(const char *key,unsigned int keylen,unsigned int *datalen,uint32 *ttl)
 {
-  return cache_t_get(default_cache, key, keylen, datalen, ttl);
+  return cache_t_get(default_cache, key, keylen, datalen, ttl, 0);
 }
 
 void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int datalen,uint32 ttl)
@@ -258,7 +271,8 @@ int cache_init(unsigned int cachesize) {
 
   if (!default_cache) {
     default_cache = cache_t_new(cachesize);
+    return default_cache != 0;
   }
 
-  return cache_t_init(default_cache,cachesize);
+  return init(default_cache,cachesize);
 }
