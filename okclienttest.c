@@ -68,98 +68,111 @@ int main(int argc,char **argv)
 	/*
 	 * Create ip/ directory containing files:
 	 * 
-	 * 127.0.0.1
-	 * 206
+	 * 98.139.183.24
 	 * 74.125.239
 	 * 98.138
-	 * 98.139.183.24
+	 * 206	 
 	 */
 
 	printf("\ntest with loaded cache\n\n");
 
 	okclient_init_cache(1);
 
-	checkip("127.0.0.1", 1); expected.cache_hits++;
-	checkip("127.0.0.1", 1); expected.cache_hits++; 
-	checkip("127.0.0.1", 1); expected.cache_hits++;
+	checkip("98.139.183.24",1); expected.cache_hits++;
+	checkip("98.139.183.24",1); expected.cache_hits++; 
+	checkip("98.139.183.24",1); expected.cache_hits++;
 	check_stats();
-	checkip("127.0.0.2", 0); expected.cache_misses++; expected.stat_calls += 4;
+	checkip("98.139.183.25",0); expected.cache_misses++; expected.stat_calls += 4;
 	check_stats();
-	checkip("127.0.0.2", 0); expected.cache_hits++;
-	checkip("74.125.239.24", 1); expected.cache_hits++;
-	checkip("74.125.239.15", 1); expected.cache_hits++;
-	checkip("74.125.239.24", 1); expected.cache_hits++;
-	checkip("74.125.239.24", 1); expected.cache_hits++;
-	checkip("74.125.239.12", 1); expected.cache_hits++;
-	checkip("74.125.239.35", 1); expected.cache_hits++;
+	checkip("98.139.183.25",0); expected.cache_hits++;
+	checkip("98.139.183.24",1); expected.cache_hits++;
+	checkip("74.125.239.24",1); expected.cache_hits++;
+	checkip("74.125.239.15",1); expected.cache_hits++;
+	checkip("74.125.239.24",1); expected.cache_hits++;
+	checkip("74.125.239.24",1); expected.cache_hits++;
+	checkip("74.125.239.12",1); expected.cache_hits++;
+	checkip("74.125.239.35",1); expected.cache_hits++;
 	check_stats();
-	checkip("99.120.1.230", 0); expected.cache_misses++; expected.stat_calls += 4;
+	checkip("99.120.1.230",0); expected.cache_misses++; expected.stat_calls += 4;
 	check_stats();
-	checkip("99.120.1.230", 0); expected.cache_hits++;
+	checkip("99.120.1.230",0); expected.cache_hits++;
 	check_stats();
-	checkip("99.120.1.231", 0); expected.cache_misses++; expected.stat_calls += 4;
+	checkip("99.120.1.231",0); expected.cache_misses++; expected.stat_calls += 4;
 	check_stats();
-	checkip("99.120.1.231", 0); expected.cache_hits++;
-	checkip("99.120.1.231", 0); expected.cache_hits++;
-	checkip("99.120.1.231", 0); expected.cache_hits++;
+	checkip("99.120.1.231",0); expected.cache_hits++;
+	checkip("99.120.1.231",0); expected.cache_hits++;
+	checkip("99.120.1.231",0); expected.cache_hits++;
 	check_stats();
+	checkip("98.138.10.10",1); expected.cache_hits++;
+	checkip("98.138.10.10",1); expected.cache_hits++;
+	check_stats();
+	checkip("206.10.10.10",1); expected.cache_hits++;
+	checkip("206.10.10.10",1); expected.cache_hits++;	
+	check_stats();	
 
 	print_stats();
 
 	printf("test with unloaded cache\n\n"); /* cache will load lazily */
-	
+
 	okclient_init_cache(0);
 	okclient_clear_stats();
 	byte_zero(&expected,sizeof(struct okclient_stats));
 
-	checkip("127.0.0.1", 1); expected.cache_misses++; expected.stat_calls += 1;
+	checkip("98.139.183.24",1); expected.cache_misses++; expected.stat_calls += 1;
 	check_stats();
-	checkip("127.0.0.1", 1); expected.cache_hits++; 
-	checkip("127.0.0.1", 1); expected.cache_hits++;
+	checkip("98.139.183.24",1); expected.cache_hits++; 
+	checkip("98.139.183.24",1); expected.cache_hits++;
 	check_stats();
-	checkip("127.0.0.2", 0); expected.cache_misses++; expected.stat_calls += 4;
+	checkip("98.139.183.25",0); expected.cache_misses++; expected.stat_calls += 4;
 	check_stats();
-	checkip("127.0.0.2", 0); expected.cache_hits++;
+	checkip("98.139.183.25",0); expected.cache_hits++;
+	checkip("98.139.183.24",1); expected.cache_hits++;
  	check_stats();
-	checkip("74.125.239.24", 1); expected.cache_misses++; expected.stat_calls += 2;
+	checkip("74.125.239.24",1); expected.cache_misses++; expected.stat_calls += 2;
 	check_stats();
-	checkip("74.125.239.15", 1); expected.cache_hits++;
-	checkip("74.125.239.24", 1); expected.cache_hits++;
-	checkip("74.125.239.24", 1); expected.cache_hits++;
-	checkip("74.125.239.12", 1); expected.cache_hits++;
-	checkip("74.125.239.35", 1); expected.cache_hits++;
+	checkip("74.125.239.15",1); expected.cache_hits++;
+	checkip("74.125.239.24",1); expected.cache_hits++;
+	checkip("74.125.239.24",1); expected.cache_hits++;
+	checkip("74.125.239.12",1); expected.cache_hits++;
+	checkip("74.125.239.35",1); expected.cache_hits++;
 	check_stats();
-	checkip("99.120.1.230", 0); expected.cache_misses++; expected.stat_calls += 4;
+	checkip("99.120.1.230",0); expected.cache_misses++; expected.stat_calls += 4;
 	check_stats();
-	checkip("99.120.1.230", 0); expected.cache_hits++;
+	checkip("99.120.1.230",0); expected.cache_hits++;
 	check_stats();
-	checkip("99.120.1.231", 0); expected.cache_misses++; expected.stat_calls += 4;
+	checkip("99.120.1.231",0); expected.cache_misses++; expected.stat_calls += 4;
 	check_stats();check_stats();
-	checkip("99.120.1.231", 0); expected.cache_hits++;
-	checkip("99.120.1.231", 0); expected.cache_hits++;
-	checkip("99.120.1.231", 0); expected.cache_hits++;
+	checkip("99.120.1.231",0); expected.cache_hits++;
+	checkip("99.120.1.231",0); expected.cache_hits++;
+	checkip("99.120.1.231",0); expected.cache_hits++;
+	check_stats();	
+	checkip("98.138.10.10",1); expected.cache_misses++; expected.stat_calls += 3;
+	checkip("98.138.10.10",1); expected.cache_hits++;
+	check_stats();	
+	checkip("206.10.10.10",1); expected.cache_misses++; expected.stat_calls += 4;
+	checkip("206.10.10.10",1); expected.cache_hits++;	
 	check_stats();
 
 	print_stats();
 
 	printf("test TTL\n\n");
 
-	okclient_set_cache_ttl(5); /* set TTL to 5 seconds */
+	okclient_set_cache_ttl(2); /* set TTL to 2 seconds */
 
 	okclient_init_cache(0);
 	okclient_clear_stats();
 	byte_zero(&expected,sizeof(struct okclient_stats));
 
-	checkip("127.0.0.1", 1); expected.cache_misses++; expected.stat_calls += 1;
+	checkip("98.139.183.24",1); expected.cache_misses++; expected.stat_calls += 1;
 	check_stats();
-	checkip("127.0.0.1", 1); expected.cache_hits++; 
+	checkip("98.139.183.24",1); expected.cache_hits++; 
 	check_stats();
 
-	sleep(6); /* sleep 6 seconds, cache entry should be expired */
+	sleep(3); /* sleep 3 seconds, cache entry should be expired */
 
-	checkip("127.0.0.1", 1); expected.cache_misses++; expected.stat_calls += 1;
+	checkip("98.139.183.24",1); expected.cache_misses++; expected.stat_calls += 1;
 	check_stats();
-	checkip("127.0.0.1", 1); expected.cache_hits++; 
+	checkip("98.139.183.24",1); expected.cache_hits++; 
 	check_stats();
 
 	print_stats();
