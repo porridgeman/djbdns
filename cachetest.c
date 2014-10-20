@@ -71,8 +71,7 @@ static void test_motion()
   int total;
   cache_options options = {
     1,  /* allow_resize */
-    10, /* target_cycle_time */
-    0   /* min_sample_time */
+    10  /* target_cycle_time */
   };
 
   if (!cache_init(1000, &options)) _exit(111);

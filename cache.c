@@ -3,6 +3,7 @@
 #include "uint32.h"
 #include "exit.h"
 #include "tai.h"
+#include "taia.h"
 #include "cache.h"
 #include <stdio.h>
 
@@ -17,8 +18,7 @@ struct cache {
   uint32 unused;
   uint64 cache_motion;
   struct {
-    struct tai start;
-    int count;
+    struct taia start;
     int low_ratio_count;
     int high_ratio_count;
   } cycle;
@@ -60,7 +60,6 @@ Each entry contains the following information:
 #define MINCACHESIZE 100
 
 #define DEFAULT_TARGET_CYCLETIME 86400  /* 24 hours */
-#define DEFAULT_MIN_SAMPLE_TIME  300    /* 5 minutes */
 
 static void log_cache_resize(unsigned int oldsize, unsigned int newsize)
 {
@@ -128,8 +127,7 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   c->oldest = c->size;
   c->unused = c->size;
 
-  tai_now(&c->cycle.start);
-  c->cycle.count = 0;
+  taia_now(&c->cycle.start);
   c->cycle.low_ratio_count = 0;
   c->cycle.high_ratio_count = 0;
 
@@ -138,71 +136,71 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   } else {
     c->options.allow_resize = 1;
     c->options.target_cycle_time = DEFAULT_TARGET_CYCLETIME;
-    c->options.min_sample_time = DEFAULT_MIN_SAMPLE_TIME;
   }
 
   return 1;
 }
 
-/*
- * Return true if ratio < 0.5 for the second time in succession.
- */
-static int low_ratio(struct cache *c, double ratio)
+static int check_for_resize(struct cache *c)
 {
-  if (ratio < 0.5) {
-    if (++c->cycle.low_ratio_count > 1) return 1;
-  } else {
-    c->cycle.low_ratio_count = 0;
-  }
-  return 0;
-}
-
-/*
- * Return true if ratio > 1.0 for the second time in succession.
- */
-static int high_ratio(struct cache *c, double ratio)
-{
-  if (ratio > 1.0) {
-    if (++c->cycle.high_ratio_count > 1) return 1;
-  } else {
-    c->cycle.high_ratio_count = 0;
-  }
-  return 0;
-}
-
-static int check_motion(struct cache *c)
-{
-  struct tai now;
-  struct tai elapsed;
+  struct taia now;
+  struct taia diff;
+  double elapsed;
   double ratio;
+  int high = 0;
+  int low = 0;
+  int resize = 0;
   uint32 motion;
   unsigned int newsize;
   char *new;
 
-  tai_now(&now);
-  tai_sub(&elapsed,&now,&c->cycle.start);
+  taia_now(&now);
+  taia_sub(&diff,&now,&c->cycle.start);
 
-  c->cycle.count++;
+  elapsed = taia_approx(&diff);
 
-  if (tai_approx(&elapsed) > c->options.min_sample_time) {
+  if (c->options.allow_resize && elapsed) {
 
-    ratio = (double)c->options.target_cycle_time / (tai_approx(&elapsed) / c->cycle.count);
+    ratio = (double)c->options.target_cycle_time / elapsed;
 
-    printf("ratio = %lf\n", ratio);fflush(stdout);
+    newsize = c->size * ratio * 1.1; /* add 10% */
 
-    if (c->options.allow_resize && (high_ratio(c,ratio) || low_ratio(c,ratio))) {
-      newsize = c->size * ratio * 1.1; /* add 10% */
-      if (newsize < MAXCACHESIZE) {
-        log_cache_resize(c->size, newsize);
-        init(c,newsize,&c->options); /* TODO check for failure, and at least log? */
-        return 1;
+    if (ratio > 1.0) {
+      c->cycle.low_ratio_count = 0;
+      if (++c->cycle.high_ratio_count > 1) {
+        if (c->size < MAXCACHESIZE) {  /* don't grow cache if it is already at max size */
+          newsize = newsize > MAXCACHESIZE ? MAXCACHESIZE : newsize;
+          resize = 1;
+        }
+        c->cycle.high_ratio_count = 0;  // TODO is this right?
+      }
+    } else {
+
+      c->cycle.high_ratio_count = 0;
+
+      if (ratio < 0.5) {
+        if (++c->cycle.low_ratio_count > 1) {
+          if (c->size > MINCACHESIZE) { /* don't shrink cache if it is already at min size */
+            newsize = newsize < MINCACHESIZE ? MINCACHESIZE : newsize;
+            resize = 1;   
+          }
+          c->cycle.low_ratio_count = 0;  // TODO is this right?
+        }
+      } else {
+        c->cycle.low_ratio_count = 0;
       }
     }
 
-    tai_now(&c->cycle.start);
-    c->cycle.count = 0;
+    printf("ratio = %lf  resize = %s\n",ratio,resize ? "true" : "false");fflush(stdout);
 
+    if (resize) {
+      log_cache_resize(c->size, newsize);
+      init(c,newsize,&c->options); /* TODO check for failure, and at least log? */
+      return 1;
+    }
   }
+
+  taia_now(&c->cycle.start);
 
   return 0;
 } 
@@ -287,7 +285,10 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
   while (c->writer + entrylen > c->oldest) {
     if (c->oldest == c->unused) {
       if (c->writer <= c->hsize) return;
-      if (check_motion(c)) return;
+      if (check_for_resize(c)) {
+        cache_t_set(cache,key,keylen,data,datalen,ttl); /* call again if cache was resized */
+        return;
+      }
       c->unused = c->writer;
       c->oldest = c->hsize;
       c->writer = c->hsize;

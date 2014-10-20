@@ -6,9 +6,8 @@
 #include "taia.h"
 
 typedef struct cache_options {
-	int allow_resize;         /* 1 means allow automatic resize */
+	int allow_resize;         /* 1 means allow automatic resize, 0 means don't, default is 1 */
 	uint32 target_cycle_time; /* in seconds, default is 86400 (24 hours) */
-	uint32 min_sample_time;   /* in seconds, sample cycle times for at least this long before resizing, default is 300 (5 minutes) */
 } cache_options;
 
 extern uint64 cache_motion;
