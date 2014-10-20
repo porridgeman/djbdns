@@ -32,7 +32,6 @@ static void space(void)
 }
 
 static void set(const char *key, const char *data) {
-  printf("%s\n", key);
   cache_set(key,str_len(key),data,str_len(data)+1,86400);
 }
 
