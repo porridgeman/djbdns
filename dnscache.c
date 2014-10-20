@@ -428,7 +428,7 @@ int main()
   if (!x)
     strerr_die2x(111,FATAL,"$CACHESIZE not set");
   scan_ulong(x,&cachesize);
-  if (!cache_init(cachesize))
+  if (!cache_init(cachesize,0))
     strerr_die3x(111,FATAL,"not enough memory for cache of size ",x);
 
   if (env_get("HIDETTL"))

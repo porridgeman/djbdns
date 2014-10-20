@@ -21,9 +21,10 @@ struct cache {
     int count;
     int low_ratio_count;
   } cycle;
+  cache_options options;
 };
 
-static cache_t default_cache;
+static struct cache *default_cache = 0;
 
 /*
 100 <= size <= 1000000000.
@@ -57,19 +58,13 @@ Each entry contains the following information:
 #define MAXCACHESIZE 1000000000
 #define MINCACHESIZE 100
 
-//static uint32 cycletime = 24 * 3600; /* 24 hours */
-static uint32 cycletime = 20; /* 20 seconds FOR TESTING */
-static uint32 mintime = 10; /* 10 seconds */
-
-// #define TARGET_CYCLETIME 86400  /* 24 hours */
-// #define MIN_SAMPLE_TIME  300    /* 5 minutes */
-#define TARGET_CYCLETIME 20     /* 20 seconds FOR TESTING */
-#define MIN_SAMPLE_TIME  10     /* 10 seconds FOR TESTING */
+#define DEFAULT_TARGET_CYCLETIME 86400  /* 24 hours */
+#define DEFAULT_MIN_SAMPLE_TIME  300    /* 5 minutes */
 
 static void log_cache_resize(unsigned int oldsize, unsigned int newsize)
 {
   printf("cache resized from %d to %d\n", oldsize, newsize);
-}
+} 
 
 static void cache_impossible(void)
 {
@@ -105,7 +100,7 @@ static unsigned int hash(struct cache *c,const char *key,unsigned int keylen)
   return result;
 }
 
-static int init(struct cache *c, unsigned int cachesize)
+static int init(struct cache *c,unsigned int cachesize,cache_options *options)
 {
   char *mem;
 
@@ -134,18 +129,30 @@ static int init(struct cache *c, unsigned int cachesize)
 
   tai_now(&c->cycle.start);
   c->cycle.count = 0;
-  c->cycle.low_ratio_count;
+  c->cycle.low_ratio_count = 0;
+
+  if (options) {
+    byte_copy(&c->options,sizeof(cache_options),options);
+  } else {
+    c->options.allow_resize = 1;
+    c->options.clear_on_resize = 0;
+    c->options.target_cycle_time = DEFAULT_TARGET_CYCLETIME;
+    c->options.min_sample_time = DEFAULT_MIN_SAMPLE_TIME;
+  }
 
   return 1;
 }
 
 /*
- * Return true if ration < 0.5 for the third time in a row.
+ * Return true if ration < 0.5 for the third time in succession.
  */
 static int low_ratio(struct cache *c, double ratio)
 {
-  if (ratio < 0.5 && ++c->cycle.low_ratio_count > 2) return 1;
-  c->cycle.low_ratio_count = 0;
+  if (ratio < 0.5) {
+    if (++c->cycle.low_ratio_count > 2) return 1;
+  } else {
+    c->cycle.low_ratio_count = 0;
+  }
   return 0;
 }
 
@@ -163,17 +170,17 @@ static int check_motion(struct cache *c)
 
   c->cycle.count++;
 
-  if (tai_approx(&elapsed) > MIN_SAMPLE_TIME) {
+  if (tai_approx(&elapsed) > c->options.min_sample_time) {
 
-    ratio = (double)TARGET_CYCLETIME / (tai_approx(&elapsed) / c->cycle.count);
+    ratio = (double)c->options.target_cycle_time / (tai_approx(&elapsed) / c->cycle.count);
 
     printf("ratio = %lf\n", ratio);fflush(stdout);
 
-    if (ratio > 1.0 || low_ratio(c,ratio)) {
+    if (c->options.allow_resize && (ratio > 1.0 || low_ratio(c,ratio))) {
       newsize = c->size * ratio * 1.1; /* add 10% */
       if (newsize < MAXCACHESIZE) {
         log_cache_resize(c->size, newsize);
-        init(c, newsize); /* TODO check for failure, and at least log? */
+        init(c,newsize,&c->options); /* TODO check for failure, and at least log? */
         return 1;
       }
     }
@@ -311,24 +318,32 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
  * Create and return cache, cachesize is total size to allocate
  * in bytes (not including size of struct cache)
  */
-cache_t cache_t_new(unsigned int cachesize) {
+cache_t cache_t_new(unsigned int cachesize,cache_options *options) {
 
   struct cache *c = (struct cache *)alloc(sizeof(struct cache));
   byte_zero(c,sizeof(struct cache));
 
-  if (init(c,cachesize)) {
+  if (init(c,cachesize,options)) {
     return (cache_t)c;
   }
 
   return 0;
 }
 
+void cache_set_options(cache_options options)
+{
+  // TODO this is not ideal, could be misleading if someone sets options first
+  if (default_cache) {
+    byte_copy(default_cache->options,sizeof(cache_options),&options);
+  }
+}
+
 /*
  * Re-initialize existing cache.
  */
-int cache_t_init(cache_t cache, unsigned int cachesize) {
+int cache_t_init(cache_t cache,unsigned int cachesize,cache_options *options) {
   if (!cache) return 0;
-  return init((struct cache *)cache, cachesize);
+  return init((struct cache *)cache,cachesize,options);
 }
 
 /*
@@ -354,12 +369,12 @@ void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int
   cache_t_set(default_cache, key, keylen, data, datalen, ttl);
 }
 
-int cache_init(unsigned int cachesize) {
-
+int cache_init(unsigned int cachesize,cache_options *options)
+{
   if (!default_cache) {
-    default_cache = cache_t_new(cachesize);
+    default_cache = cache_t_new(cachesize,options);
     return default_cache != 0;
   }
 
-  return init(default_cache,cachesize);
+  return init(default_cache,cachesize,options);
 }

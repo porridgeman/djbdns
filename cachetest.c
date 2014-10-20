@@ -65,13 +65,30 @@ static char *test_key(int i) {
   return keybuf;
 }
 
-static void test_motion() {
+static void test_motion()
+{
   int i;
+  cache_options options = {
+    1,  /* allow_resize */
+    0,  /* clear_on_resize */
+    10, /* target_cycle_time */
+    5  /* min_sample_time */
+  };
 
-  if (!cache_init(10000)) _exit(111);
+  if (!cache_init(10000, &options)) _exit(111);
 
   for (i = 0; i < 10000; i++) {
-    usleep(10000);
+    usleep(5000); /* add 200 per second */
+    set(test_key(i),TEST_DATA);
+  }
+
+  for (i = 0; i < 10000; i++) {
+    usleep(11000); /* add less than 100 per second */
+    set(test_key(i),TEST_DATA);
+  }
+
+  for (i = 0; i < 10000; i++) {
+    usleep(5000); /* add 200 per second */
     set(test_key(i),TEST_DATA);
   }
 }
@@ -84,7 +101,7 @@ int main(int argc,char **argv)
   unsigned int u;
   uint32 ttl;
 
-  if (!cache_init(200)) _exit(111);
+  if (!cache_init(200,0)) _exit(111);
 
   if (*argv) ++argv;
 
