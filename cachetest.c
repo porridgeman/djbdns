@@ -32,6 +32,7 @@ static void space(void)
 }
 
 static void set(const char *key, const char *data) {
+  printf("%s\n", key);
   cache_set(key,str_len(key),data,str_len(data)+1,86400);
 }
 
@@ -68,27 +69,29 @@ static char *test_key(int i) {
 static void test_motion()
 {
   int i;
+  int total;
   cache_options options = {
     1,  /* allow_resize */
     10, /* target_cycle_time */
-    5  /* min_sample_time */
+    0   /* min_sample_time */
   };
 
-  if (!cache_init(10000, &options)) _exit(111);
+  if (!cache_init(1000, &options)) _exit(111);
 
-  for (i = 0; i < 10000; i++) {
+  total = 0;
+  for (i = 0; i < 10000; i++,total++) {
     usleep(5000); /* add 200 per second */
-    set(test_key(i),TEST_DATA);
+    set(test_key(total),TEST_DATA);
   }
 
-  for (i = 0; i < 10000; i++) {
+  for (i = 0; i < 10000; i++,total++) {
     usleep(11000); /* add less than 100 per second */
-    set(test_key(i),TEST_DATA);
+    set(test_key(total),TEST_DATA);
   }
 
-  for (i = 0; i < 10000; i++) {
+  for (i = 0; i < 10000; i++,total++) {
     usleep(5000); /* add 200 per second */
-    set(test_key(i),TEST_DATA);
+    set(test_key(total),TEST_DATA);
   }
 }
 

@@ -20,6 +20,7 @@ struct cache {
     struct tai start;
     int count;
     int low_ratio_count;
+    int high_ratio_count;
   } cycle;
   cache_options options;
 };
@@ -130,6 +131,7 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   tai_now(&c->cycle.start);
   c->cycle.count = 0;
   c->cycle.low_ratio_count = 0;
+  c->cycle.high_ratio_count = 0;
 
   if (options) {
     byte_copy(&c->options,sizeof(cache_options),options);
@@ -143,14 +145,27 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
 }
 
 /*
- * Return true if ration < 0.5 for the third time in succession.
+ * Return true if ratio < 0.5 for the second time in succession.
  */
 static int low_ratio(struct cache *c, double ratio)
 {
   if (ratio < 0.5) {
-    if (++c->cycle.low_ratio_count > 2) return 1;
+    if (++c->cycle.low_ratio_count > 1) return 1;
   } else {
     c->cycle.low_ratio_count = 0;
+  }
+  return 0;
+}
+
+/*
+ * Return true if ratio > 1.0 for the second time in succession.
+ */
+static int high_ratio(struct cache *c, double ratio)
+{
+  if (ratio > 1.0) {
+    if (++c->cycle.high_ratio_count > 1) return 1;
+  } else {
+    c->cycle.high_ratio_count = 0;
   }
   return 0;
 }
@@ -175,7 +190,7 @@ static int check_motion(struct cache *c)
 
     printf("ratio = %lf\n", ratio);fflush(stdout);
 
-    if (c->options.allow_resize && (ratio > 1.0 || low_ratio(c,ratio))) {
+    if (c->options.allow_resize && (high_ratio(c,ratio) || low_ratio(c,ratio))) {
       newsize = c->size * ratio * 1.1; /* add 10% */
       if (newsize < MAXCACHESIZE) {
         log_cache_resize(c->size, newsize);
