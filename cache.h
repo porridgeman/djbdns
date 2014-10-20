@@ -7,7 +7,6 @@
 
 typedef struct cache_options {
 	int allow_resize;         /* 1 means allow automatic resize */
-	int clear_on_resize;      /* 1 means clear cache on resize, 0 means keep cache data */
 	uint32 target_cycle_time; /* in seconds, default is 86400 (24 hours) */
 	uint32 min_sample_time;   /* in seconds, sample cycle times for at least this long before resizing, default is 300 (5 minutes) */
 } cache_options;

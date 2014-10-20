@@ -135,7 +135,6 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
     byte_copy(&c->options,sizeof(cache_options),options);
   } else {
     c->options.allow_resize = 1;
-    c->options.clear_on_resize = 0;
     c->options.target_cycle_time = DEFAULT_TARGET_CYCLETIME;
     c->options.min_sample_time = DEFAULT_MIN_SAMPLE_TIME;
   }
