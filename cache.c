@@ -4,6 +4,7 @@
 #include "exit.h"
 #include "tai.h"
 #include "cache.h"
+#include <stdio.h>
 
 uint64 cache_motion = 0;
 
@@ -15,6 +16,11 @@ struct cache {
   uint32 oldest;
   uint32 unused;
   uint64 cache_motion;
+  struct {
+    struct tai start;
+    int count;
+    int low_ratio_count;
+  } cycle;
 };
 
 static cache_t default_cache;
@@ -47,6 +53,23 @@ Each entry contains the following information:
 
 #define MAXKEYLEN 1000
 #define MAXDATALEN 1000000
+
+#define MAXCACHESIZE 1000000000
+#define MINCACHESIZE 100
+
+//static uint32 cycletime = 24 * 3600; /* 24 hours */
+static uint32 cycletime = 20; /* 20 seconds FOR TESTING */
+static uint32 mintime = 10; /* 10 seconds */
+
+// #define TARGET_CYCLETIME 86400  /* 24 hours */
+// #define MIN_SAMPLE_TIME  300    /* 5 minutes */
+#define TARGET_CYCLETIME 20     /* 20 seconds FOR TESTING */
+#define MIN_SAMPLE_TIME  10     /* 10 seconds FOR TESTING */
+
+static void log_cache_resize(unsigned int oldsize, unsigned int newsize)
+{
+  printf("cache resized from %d to %d\n", oldsize, newsize);
+}
 
 static void cache_impossible(void)
 {
@@ -84,28 +107,84 @@ static unsigned int hash(struct cache *c,const char *key,unsigned int keylen)
 
 static int init(struct cache *c, unsigned int cachesize)
 {
+  char *mem;
+
+  /* allocate memory first so failure won't leave c in inconsistent state */
+  mem = alloc(cachesize);
+  if (!mem) return 0;
+
   if (c->x) {
     alloc_free(c->x);
     c->x = 0;
   }
 
-  if (cachesize > 1000000000) cachesize = 1000000000;
-  if (cachesize < 100) cachesize = 100;
+  if (cachesize > MAXCACHESIZE) cachesize = MAXCACHESIZE;
+  if (cachesize < MINCACHESIZE) cachesize = MINCACHESIZE;
   c->size = cachesize;
 
   c->hsize = 4;
   while (c->hsize <= (c->size >> 5)) c->hsize <<= 1;
 
-  c->x = alloc(c->size);
-  if (!c->x) return 0;
+  c->x = mem;
   byte_zero(c->x,c->size);
 
   c->writer = c->hsize;
   c->oldest = c->size;
   c->unused = c->size;
 
+  tai_now(&c->cycle.start);
+  c->cycle.count = 0;
+  c->cycle.low_ratio_count;
+
   return 1;
 }
+
+/*
+ * Return true if ration < 0.5 for the third time in a row.
+ */
+static int low_ratio(struct cache *c, double ratio)
+{
+  if (ratio < 0.5 && ++c->cycle.low_ratio_count > 2) return 1;
+  c->cycle.low_ratio_count = 0;
+  return 0;
+}
+
+static int check_motion(struct cache *c)
+{
+  struct tai now;
+  struct tai elapsed;
+  double ratio;
+  uint32 motion;
+  unsigned int newsize;
+  char *new;
+
+  tai_now(&now);
+  tai_sub(&elapsed,&now,&c->cycle.start);
+
+  c->cycle.count++;
+
+  if (tai_approx(&elapsed) > MIN_SAMPLE_TIME) {
+
+    ratio = (double)TARGET_CYCLETIME / (tai_approx(&elapsed) / c->cycle.count);
+
+    printf("ratio = %lf\n", ratio);fflush(stdout);
+
+    if (ratio > 1.0 || low_ratio(c,ratio)) {
+      newsize = c->size * ratio * 1.1; /* add 10% */
+      if (newsize < MAXCACHESIZE) {
+        log_cache_resize(c->size, newsize);
+        init(c, newsize); /* TODO check for failure, and at least log? */
+        return 1;
+      }
+    }
+
+    tai_now(&c->cycle.start);
+    c->cycle.count = 0;
+
+  }
+
+  return 0;
+} 
 
 /*
  * Get entry from cache. Remaining time to live in seconds is return via ttl parameter.
@@ -187,6 +266,7 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
   while (c->writer + entrylen > c->oldest) {
     if (c->oldest == c->unused) {
       if (c->writer <= c->hsize) return;
+      if (check_motion(c)) return;
       c->unused = c->writer;
       c->oldest = c->hsize;
       c->writer = c->hsize;
