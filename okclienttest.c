@@ -5,6 +5,7 @@
 #include "byte.h"
 #include "ip4.h"
 #include "taia.h"
+#include <unistd.h>
 
 static struct okclient_stats expected; /* static object is initialized to 0 */
 
@@ -66,12 +67,12 @@ int main(int argc,char **argv)
 	char ip[4];
 
 	/*
-	 * Create ip/ directory containing files:
+	 * Assumes the folloeing files exist:
 	 * 
-	 * 98.139.183.24
-	 * 74.125.239
-	 * 98.138
-	 * 206	 
+	 * ip/98.139.183.24
+	 * ip/74.125.239
+	 * ip/98.138
+	 * ip/206	 
 	 */
 
 	printf("\ntest with loaded cache\n\n");
