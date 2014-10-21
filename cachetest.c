@@ -5,6 +5,7 @@
 #include "alloc.h"
 #include "byte.h"
 #include <stdio.h>
+#include <unistd.h>
 
 static int failure_count = 0;
 
