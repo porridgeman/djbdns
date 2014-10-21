@@ -5,10 +5,17 @@
 #include "uint64.h"
 #include "taia.h"
 
+typedef struct ttl_stats {
+	uint32 max;
+    uint32 min;
+    uint32 count;
+    uint64 total;
+} ttl_stats;
+
 typedef struct cache_options {
 	int allow_resize;         /* 1 means allow automatic resize, 0 means don't, default is 1 */
 	uint32 target_cycle_time; /* in seconds, default is 86400 (24 hours) */
-	int (*resize_callback)(double,uint32,uint32,int);
+	int (*resize_callback)(double,uint32,uint32,ttl_stats,int);
 } cache_options;
 
 extern uint64 cache_motion;

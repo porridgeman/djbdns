@@ -66,9 +66,10 @@ static char *test_key(int i) {
   return keybuf;
 }
 
-static int resize_callback(double ratio,uint32 oldsize,uint32 newsize,int resize)
+static int resize_callback(double ratio,uint32 oldsize,uint32 newsize,ttl_stats ttl,int resize)
 {
-  printf("ratio = %lf  oldsize = %u  newsize = %u  resize = %s\n",ratio,oldsize,newsize,resize ? "true" : "false");
+  printf("ratio = %lf  oldsize = %u  newsize = %u  ttl = (max: %d min: %d avg: %d)  resize = %s\n",
+    ratio,oldsize,newsize,ttl.min,ttl.max,ttl.count ? ttl.total / ttl.count : 0,resize ? "true" : "false");
   return resize;
 }
 

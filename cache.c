@@ -20,6 +20,7 @@ struct cache {
   struct {
     struct taia start;
     double last_ratio;
+    ttl_stats ttl;
   } cycle;
   cache_options options;
 };
@@ -139,6 +140,41 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   return 1;
 }
 
+static void cycle_stats_add_ttl(struct cache *c,uint32 ttl)
+{
+  c->cycle.ttl.count++;
+  c->cycle.ttl.total += ttl;
+  if (c->cycle.ttl.max == 0 || ttl > c->cycle.ttl.max) c->cycle.ttl.max = ttl;
+  if (c->cycle.ttl.min == 0 || ttl < c->cycle.ttl.min) c->cycle.ttl.min = ttl;
+}
+
+static void cycle_stats_clear_ttl(struct cache *c)
+{
+  byte_zero(&c->cycle.ttl,sizeof(ttl_stats));
+}
+
+static int should_resize(struct cache *c,double cycle_time,double *ratio,unsigned int *newsize)
+{
+  int resize = 0;
+
+  *ratio = (double)c->options.target_cycle_time / cycle_time;
+
+  *newsize = c->size * (*ratio) * 1.1; /* add 10% */
+  if (*newsize > MAXCACHESIZE) *newsize = MAXCACHESIZE;
+  if (*newsize < MINCACHESIZE) *newsize = MINCACHESIZE;
+
+  /*
+   * Only consider resize if ration has been high or low for two cycles in a row, to try
+   * and avoid volatility in cache resizing from a particularly busy or slow cycle. 
+   */ 
+  if (c->cycle.last_ratio) {
+    resize = (*ratio > 1.0 && c->cycle.last_ratio > 1.0 && c->size < MAXCACHESIZE)
+          || (*ratio < 0.5 && c->cycle.last_ratio < 0.5 && c->size > MINCACHESIZE);
+  }
+
+  return resize;
+}
+
 static int check_for_resize(struct cache *c)
 {
   struct taia now;
@@ -157,33 +193,20 @@ static int check_for_resize(struct cache *c)
 
   if (c->options.allow_resize && cycle_time) {
 
-    ratio = (double)c->options.target_cycle_time / cycle_time;
-
-    newsize = c->size * ratio * 1.1; /* add 10% */
-    if (newsize > MAXCACHESIZE) newsize = MAXCACHESIZE;
-    if (newsize < MINCACHESIZE) newsize = MINCACHESIZE;
-
-    /*
-     * Only consider resize if ration has been high or low for two cycles in a row, to try
-     * and avoid volatility in cache resizing from a particularly busy or slow cycle. 
-     */ 
-    if (c->cycle.last_ratio) {
-      resize = (ratio > 1.0 && c->cycle.last_ratio > 1.0 && c->size < MAXCACHESIZE)
-            || (ratio < 0.5 && c->cycle.last_ratio < 0.5 && c->size > MINCACHESIZE);
-    }
-
-    c->cycle.last_ratio = ratio;
+    resize = should_resize(c,cycle_time,&ratio,&newsize);
 
     /*
      * TODO is it a good idea to let callback decide if resize should happen?
      */
     if (c->options.resize_callback) {
-      resize = (*c->options.resize_callback)(ratio,c->size,newsize,resize);
+      resize = (*c->options.resize_callback)(ratio,c->size,newsize,c->cycle.ttl,resize);
     }
+
+    c->cycle.last_ratio = ratio;
 
     if (resize) {
       c->cycle.last_ratio = 0.0;
-      log_cache_resize(c->size, newsize);
+      log_cache_resize(c->size, newsize);  // TODO implement real log function
       init(c,newsize,&c->options); /* TODO check for failure, and at least log? */
       return 1;
     }
@@ -309,6 +332,8 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
   tai_pack(c->x + c->writer + 12,&expire);
   byte_copy(c->x + c->writer + 20,keylen,key);
   byte_copy(c->x + c->writer + 20 + keylen,datalen,data);
+
+  cycle_stats_add_ttl(c,ttl);
 
   set4(c,keyhash,c->writer);
   c->writer += entrylen;
