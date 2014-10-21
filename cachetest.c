@@ -32,8 +32,8 @@ static void space(void)
   string(" ");
 }
 
-static void set(const char *key, const char *data) {
-  cache_set(key,str_len(key),data,str_len(data)+1,86400);
+static void set(const char *key, const char *data,uint32 ttl) {
+  cache_set(key,str_len(key),data,str_len(data)+1,ttl);
 }
 
 static char *get(const char *key) {
@@ -66,10 +66,10 @@ static char *test_key(int i) {
   return keybuf;
 }
 
-static int resize_callback(double ratio,uint32 oldsize,uint32 newsize,ttl_stats ttl,int resize)
+static int resize_callback(double ratio,uint32 oldsize,uint32 newsize,int resize)
 {
-  printf("ratio = %lf  oldsize = %u  newsize = %u  ttl = (max: %d min: %d avg: %d)  resize = %s\n",
-    ratio,oldsize,newsize,ttl.min,ttl.max,ttl.count ? ttl.total / ttl.count : 0,resize ? "true" : "false");
+  printf("ratio = %lf  oldsize = %u  newsize = %u  resize = %s\n",
+    ratio,oldsize,newsize,resize ? "true" : "false");
   return resize;
 }
 
@@ -78,7 +78,7 @@ static void test_motion()
   int i;
   int total;
   cache_options options = {
-    1,                 /* allow_resize */
+    TARGET_CYCLE_TIME, /* allow resize, use target_cycle_time */
     10,                /* target_cycle_time */
     resize_callback
   };
@@ -88,17 +88,17 @@ static void test_motion()
   total = 0;
   for (i = 0; i < 10000; i++,total++) {
     usleep(5000); /* add 200 per second */
-    set(test_key(total),TEST_DATA);
+    set(test_key(total),TEST_DATA,86400);
   }
 
   for (i = 0; i < 10000; i++,total++) {
     usleep(11000); /* add less than 100 per second */
-    set(test_key(total),TEST_DATA);
+    set(test_key(total),TEST_DATA,86400);
   }
 
   for (i = 0; i < 10000; i++,total++) {
     usleep(5000); /* add 200 per second */
-    set(test_key(total),TEST_DATA);
+    set(test_key(total),TEST_DATA,86400);
   }
 }
 

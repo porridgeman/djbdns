@@ -20,7 +20,12 @@ struct cache {
   struct {
     struct taia start;
     double last_ratio;
-    ttl_stats ttl;
+    struct ttl_stats {
+      uint32 max;
+      uint32 min;
+      uint32 count;
+      uint64 total;
+    } ttl;
   } cycle;
   cache_options options;
 };
@@ -59,7 +64,7 @@ Each entry contains the following information:
 #define MAXCACHESIZE 1000000000
 #define MINCACHESIZE 100
 
-#define DEFAULT_TARGET_CYCLETIME 86400  /* 24 hours */
+#define DEFAULT_TARGET_CYCLE_TIME 86400  /* 24 hours */
 
 static void log_cache_resize(unsigned int oldsize, unsigned int newsize)
 {
@@ -133,8 +138,8 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   if (options) {
     byte_copy(&c->options,sizeof(cache_options),options);
   } else {
-    c->options.allow_resize = 1;
-    c->options.target_cycle_time = DEFAULT_TARGET_CYCLETIME;
+    c->options.resize_mode = TARGET_CYCLE_TIME;
+    c->options.target_cycle_time = DEFAULT_TARGET_CYCLE_TIME;
   }
 
   return 1;
@@ -150,26 +155,62 @@ static void cycle_stats_add_ttl(struct cache *c,uint32 ttl)
 
 static void cycle_stats_clear_ttl(struct cache *c)
 {
-  byte_zero(&c->cycle.ttl,sizeof(ttl_stats));
+  byte_zero(&c->cycle.ttl,sizeof(struct ttl_stats));
+}
+
+static double get_target_cycle_time(struct cache *c)
+{
+  uint32 target = 0;
+
+  switch(c->options.resize_mode) {
+
+    case TARGET_CYCLE_TIME:
+    target = c->options.target_cycle_time;
+    break; 
+
+    case MIN_TTL:
+    target = c->cycle.ttl.min;
+    break;
+
+    case MAX_TTL:
+    target = c->cycle.ttl.max;
+    break;
+
+    case AVG_TTL:
+    target = c->cycle.ttl.count ? c->cycle.ttl.total / c->cycle.ttl.count : 0;
+    break;
+
+    default:
+    target = 0;
+    break;
+  }
+
+  return (double)target;
 }
 
 static int should_resize(struct cache *c,double cycle_time,double *ratio,unsigned int *newsize)
 {
   int resize = 0;
+  double target_cycle_time;
 
-  *ratio = (double)c->options.target_cycle_time / cycle_time;
+  target_cycle_time = get_target_cycle_time(c);
 
-  *newsize = c->size * (*ratio) * 1.1; /* add 10% */
-  if (*newsize > MAXCACHESIZE) *newsize = MAXCACHESIZE;
-  if (*newsize < MINCACHESIZE) *newsize = MINCACHESIZE;
+  if (target_cycle_time) {
 
-  /*
-   * Only consider resize if ration has been high or low for two cycles in a row, to try
-   * and avoid volatility in cache resizing from a particularly busy or slow cycle. 
-   */ 
-  if (c->cycle.last_ratio) {
-    resize = (*ratio > 1.0 && c->cycle.last_ratio > 1.0 && c->size < MAXCACHESIZE)
-          || (*ratio < 0.5 && c->cycle.last_ratio < 0.5 && c->size > MINCACHESIZE);
+    *ratio = target_cycle_time / cycle_time;
+
+    *newsize = c->size * (*ratio) * 1.1; /* add 10% */
+    if (*newsize > MAXCACHESIZE) *newsize = MAXCACHESIZE;
+    if (*newsize < MINCACHESIZE) *newsize = MINCACHESIZE;
+
+    /*
+     * Only consider resize if ratio has been high or low for two cycles in a row, to try
+     * and avoid volatility in cache resizing from a spike or lull. 
+     */ 
+    if (c->cycle.last_ratio) {
+      resize = (*ratio > 1.0 && c->cycle.last_ratio > 1.0 && c->size < MAXCACHESIZE)
+            || (*ratio < 0.5 && c->cycle.last_ratio < 0.5 && c->size > MINCACHESIZE);
+    }
   }
 
   return resize;
@@ -191,15 +232,18 @@ static int check_for_resize(struct cache *c)
 
   cycle_time = taia_approx(&elapsed);
 
-  if (c->options.allow_resize && cycle_time) {
+  if (c->options.resize_mode != NONE && cycle_time) {
 
     resize = should_resize(c,cycle_time,&ratio,&newsize);
 
     /*
      * TODO is it a good idea to let callback decide if resize should happen?
+     *
+     * TODO should probably remove callback altogether... not safe, what if caller inits cache?
+     * or maybe safe but only after resize? or maybe better just to log
      */
     if (c->options.resize_callback) {
-      resize = (*c->options.resize_callback)(ratio,c->size,newsize,c->cycle.ttl,resize);
+      resize = (*c->options.resize_callback)(ratio,c->size,newsize,resize);
     }
 
     c->cycle.last_ratio = ratio;
