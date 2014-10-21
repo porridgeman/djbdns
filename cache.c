@@ -84,6 +84,12 @@ static unsigned int hash(struct cache *c,const char *key,unsigned int keylen)
 
 static int init(struct cache *c, unsigned int cachesize)
 {
+  char *mem;
+
+  /* allocate memory first so failure won't leave c in inconsistent state */
+  mem = alloc(cachesize);
+  if (!mem) return 0;
+
   if (c->x) {
     alloc_free(c->x);
     c->x = 0;
@@ -96,7 +102,7 @@ static int init(struct cache *c, unsigned int cachesize)
   c->hsize = 4;
   while (c->hsize <= (c->size >> 5)) c->hsize <<= 1;
 
-  c->x = alloc(c->size);
+  c->x = mem;
   if (!c->x) return 0;
   byte_zero(c->x,c->size);
 
