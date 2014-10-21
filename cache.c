@@ -19,8 +19,7 @@ struct cache {
   uint64 cache_motion;
   struct {
     struct taia start;
-    int low_ratio_count;
-    int high_ratio_count;
+    double last_ratio;
   } cycle;
   cache_options options;
 };
@@ -128,8 +127,7 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   c->unused = c->size;
 
   taia_now(&c->cycle.start);
-  c->cycle.low_ratio_count = 0;
-  c->cycle.high_ratio_count = 0;
+  c->cycle.last_ratio = 0.0;
 
   if (options) {
     byte_copy(&c->options,sizeof(cache_options),options);
@@ -144,60 +142,47 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
 static int check_for_resize(struct cache *c)
 {
   struct taia now;
-  struct taia diff;
-  double elapsed;
+  struct taia elapsed;
+  double cycle_time;
   double ratio;
-  int high = 0;
-  int low = 0;
   int resize = 0;
   uint32 motion;
   unsigned int newsize;
   char *new;
 
   taia_now(&now);
-  taia_sub(&diff,&now,&c->cycle.start);
+  taia_sub(&elapsed,&now,&c->cycle.start);
 
-  elapsed = taia_approx(&diff);
+  cycle_time = taia_approx(&elapsed);
 
-  if (c->options.allow_resize && elapsed) {
+  if (c->options.allow_resize && cycle_time) {
 
-    ratio = (double)c->options.target_cycle_time / elapsed;
+    ratio = (double)c->options.target_cycle_time / cycle_time;
 
     newsize = c->size * ratio * 1.1; /* add 10% */
+    if (newsize > MAXCACHESIZE) newsize = MAXCACHESIZE;
+    if (newsize < MINCACHESIZE) newsize = MINCACHESIZE;
 
-    if (ratio > 1.0) {
-      c->cycle.low_ratio_count = 0;
-      if (++c->cycle.high_ratio_count > 1) {
-        if (c->size < MAXCACHESIZE) {  /* don't grow cache if it is already at max size */
-          newsize = newsize > MAXCACHESIZE ? MAXCACHESIZE : newsize;
-          resize = 1;
-        }
-        c->cycle.high_ratio_count = 0;  // TODO is this right?
-      }
-    } else {
-
-      c->cycle.high_ratio_count = 0;
-
-      if (ratio < 0.5) {
-        if (++c->cycle.low_ratio_count > 1) {
-          if (c->size > MINCACHESIZE) { /* don't shrink cache if it is already at min size */
-            newsize = newsize < MINCACHESIZE ? MINCACHESIZE : newsize;
-            resize = 1;   
-          }
-          c->cycle.low_ratio_count = 0;  // TODO is this right?
-        }
-      } else {
-        c->cycle.low_ratio_count = 0;
-      }
+    /*
+     * Only consider resize if ration has been high or low for two cycles in a row, to try
+     * and avoid volatility in cache resizing from a particularly busy or slow cycle. 
+     */ 
+    if (c->cycle.last_ratio) {
+      resize = (ratio > 1.0 && c->cycle.last_ratio > 1.0 && c->size < MAXCACHESIZE)
+            || (ratio < 0.5 && c->cycle.last_ratio < 0.5 && c->size > MINCACHESIZE);
     }
 
-    //printf("ratio = %lf  resize = %s\n",ratio,resize ? "true" : "false");fflush(stdout);
+    c->cycle.last_ratio = ratio;
 
+    /*
+     * TODO is it a good idea to let callback decide if resize should happen?
+     */
     if (c->options.resize_callback) {
       resize = (*c->options.resize_callback)(ratio,c->size,newsize,resize);
     }
 
     if (resize) {
+      c->cycle.last_ratio = 0.0;
       log_cache_resize(c->size, newsize);
       init(c,newsize,&c->options); /* TODO check for failure, and at least log? */
       return 1;
