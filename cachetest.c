@@ -66,14 +66,13 @@ static char *test_key(int i) {
   return keybuf;
 }
 
-static int resize_callback(double ratio,uint32 oldsize,uint32 newsize,int resize)
+static void resize_callback(double ratio,uint32 oldsize,uint32 newsize,int resized)
 {
-  printf("ratio = %lf  oldsize = %u  newsize = %u  resize = %s\n",
-    ratio,oldsize,newsize,resize ? "true" : "false");
-  return resize;
+  printf("ratio = %lf  oldsize = %u  newsize = %u  %s\n", 
+    ratio,oldsize,newsize,resized ? "success" : "failure");
 }
 
-static void test_motion()
+static void test_resize()
 {
   int i;
   int total;
@@ -128,7 +127,7 @@ int main(int argc,char **argv)
 
   buffer_flush(buffer_1);
 
-  test_motion();
+  test_resize();
 
   _exit(0);
 }

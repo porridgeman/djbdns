@@ -5,6 +5,7 @@
 #include "tai.h"
 #include "taia.h"
 #include "cache.h"
+#include "log.h"
 #include <stdio.h>
 
 uint64 cache_motion = 0;
@@ -65,11 +66,6 @@ Each entry contains the following information:
 #define MINCACHESIZE 100
 
 #define DEFAULT_TARGET_CYCLE_TIME 86400  /* 24 hours */
-
-static void log_cache_resize(unsigned int oldsize, unsigned int newsize)
-{
-  printf("cache resized from %d to %d\n", oldsize, newsize);
-} 
 
 static void cache_impossible(void)
 {
@@ -224,6 +220,7 @@ static int check_for_resize(struct cache *c)
   double ratio;
   int resize = 0;
   uint32 motion;
+  unsigned int oldsize;
   unsigned int newsize;
   char *new;
 
@@ -236,23 +233,15 @@ static int check_for_resize(struct cache *c)
 
     resize = should_resize(c,cycle_time,&ratio,&newsize);
 
-    /*
-     * TODO is it a good idea to let callback decide if resize should happen?
-     *
-     * TODO should probably remove callback altogether... not safe, what if caller inits cache?
-     * or maybe safe but only after resize? or maybe better just to log
-     */
-    if (c->options.resize_callback) {
-      resize = (*c->options.resize_callback)(ratio,c->size,newsize,resize);
-    }
-
     c->cycle.last_ratio = ratio;
 
     if (resize) {
-      c->cycle.last_ratio = 0.0;
-      log_cache_resize(c->size, newsize);  // TODO implement real log function
-      init(c,newsize,&c->options); /* TODO check for failure, and at least log? */
-      return 1;
+      oldsize = c->size; /* the init call will modify c->size */
+      resize = init(c,newsize,&c->options);
+      if (c->options.resize_callback) {
+        (*c->options.resize_callback)(ratio,oldsize,newsize,resize);
+      }
+      if (resize) return 1;
     }
   }
 
