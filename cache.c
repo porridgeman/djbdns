@@ -191,7 +191,11 @@ static int check_for_resize(struct cache *c)
       }
     }
 
-    printf("ratio = %lf  resize = %s\n",ratio,resize ? "true" : "false");fflush(stdout);
+    //printf("ratio = %lf  resize = %s\n",ratio,resize ? "true" : "false");fflush(stdout);
+
+    if (c->options.resize_callback) {
+      resize = (*c->options.resize_callback)(ratio,c->size,newsize,resize);
+    }
 
     if (resize) {
       log_cache_resize(c->size, newsize);

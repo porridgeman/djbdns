@@ -65,13 +65,20 @@ static char *test_key(int i) {
   return keybuf;
 }
 
+static int resize_callback(double ratio,uint32 oldsize,uint32 newsize,int resize)
+{
+  printf("ratio = %lf  oldsize = %u  newsize = %u  resize = %s\n",ratio,oldsize,newsize,resize ? "true" : "false");
+  return resize;
+}
+
 static void test_motion()
 {
   int i;
   int total;
   cache_options options = {
-    1,  /* allow_resize */
-    10  /* target_cycle_time */
+    1,                 /* allow_resize */
+    10,                /* target_cycle_time */
+    resize_callback
   };
 
   if (!cache_init(1000, &options)) _exit(111);
