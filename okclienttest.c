@@ -5,7 +5,10 @@
 #include "byte.h"
 #include "ip4.h"
 #include "taia.h"
+#include "exit.h"
 #include <unistd.h>
+#include <errno.h>
+#include <string.h>
 
 static struct okclient_stats expected; /* static object is initialized to 0 */
 
@@ -62,18 +65,47 @@ static void checkip(const char *ipstr, int expected)
 	printf("  okclient(%s) = %d   %s\n", ipstr, ok, ok != expected ? "*** failure ***" : "");
 }
 
+static void print_create_error_and_exit()
+{
+	printf("\nplease make sure the following files exist:\n");
+	printf("ip/98.139.183.24\n");
+	printf("ip/74.125.239\n");
+	printf("ip/98.138\n");
+	printf("ip/206\n");
+	_exit(1);
+}
+
+static void create_file(char *fn)
+{
+	FILE *fp;
+
+	fp = fopen(fn, "w+");
+	if (fp) {
+		fclose(fp);
+	} else {
+		printf("unable to create or open file %s\n%s\n",fn,strerror(errno));
+		print_create_error_and_exit();
+	}
+}
+
+static void create_ip_dir()
+{
+	if (mkdir("ip", 0755) && errno != EEXIST) {
+		printf("unable to create directory ip\n%s\n",strerror(errno));
+		print_create_error_and_exit();
+	}
+	
+	create_file("ip/98.139.183.24");
+	create_file("ip/74.125.239");
+	create_file("ip/98.138");
+	create_file("ip/206");
+}
+
 int main(int argc,char **argv)
 {
 	char ip[4];
 
-	/*
-	 * Assumes the folloeing files exist:
-	 * 
-	 * ip/98.139.183.24
-	 * ip/74.125.239
-	 * ip/98.138
-	 * ip/206	 
-	 */
+	create_ip_dir();
 
 	printf("\ntest with loaded cache\n\n");
 
