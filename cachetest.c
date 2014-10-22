@@ -168,6 +168,17 @@ static void test_resize()
   printf("\nresize tests complete\n");
 }
 
+static void simple_test()
+{
+  char *data;
+  if (!cache_init(1000,0)) _exit(111);
+
+  set(TEST_KEY,TEST_DATA,86400);
+
+  data = get(TEST_KEY);
+  printf("data = %s\n",data ? data : "NULL"); fflush(stdout);
+}
+
 int main(int argc,char **argv)
 {
   int i;
@@ -196,6 +207,7 @@ int main(int argc,char **argv)
 
   buffer_flush(buffer_1);
 
+  //simple_test();
   test_resize();
 
   _exit(0);

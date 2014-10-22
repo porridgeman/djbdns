@@ -12,6 +12,7 @@ uint64 cache_motion = 0;
 
 struct cache {
   char *x;
+  char *y;
   uint32 size;
   uint32 hsize;
   uint32 writer;
@@ -67,17 +68,25 @@ static void cache_impossible(void)
   _exit(111);
 }
 
+static char *get_address(struct cache *c, uint32 pos)
+{
+  if (pos < c->hsize) {
+    return c->x + pos;
+  }
+  return c->y + pos - c->hsize;
+}
+
 static void set4(struct cache *c, uint32 pos,uint32 u)
 {
   if (pos > c->size - 4) cache_impossible();
-  uint32_pack(c->x + pos,u);
+  uint32_pack(get_address(c,pos),u);
 }
 
 static uint32 get4(struct cache *c, uint32 pos)
 {
   uint32 result;
   if (pos > c->size - 4) cache_impossible();
-  uint32_unpack(c->x + pos,&result);
+  uint32_unpack(get_address(c,pos),&result);
   return result;
 }
 
@@ -98,26 +107,43 @@ static unsigned int hash(struct cache *c,const char *key,unsigned int keylen)
 
 static int init(struct cache *c,unsigned int cachesize,cache_options_t *options)
 {
-  char *mem;
-
-  /* allocate memory first so failure won't leave c in inconsistent state */
-  mem = alloc(cachesize);
-  if (!mem) return 0;
-
-  if (c->x) {
-    alloc_free(c->x);
-    c->x = 0;
-  }
+  uint32 hsize;
+  char *table;
+  char *entries;
 
   if (cachesize > MAXCACHESIZE) cachesize = MAXCACHESIZE;
   if (cachesize < MINCACHESIZE) cachesize = MINCACHESIZE;
+
+  hsize = 4;
+  while (hsize <= (cachesize >> 5)) hsize <<= 1;
+
+  /* allocate memory first so failure won't leave c in inconsistent state */
+  table = alloc(hsize);
+  if (!table) return 0;
+
+  entries = alloc(cachesize - hsize);
+  if (!entries) {
+    alloc_free(table);
+    return 0;
+  }
+
+  if (c->x) {
+    alloc_free(c->x);
+  }
+
+  if (c->y) {
+    alloc_free(c->y);
+  }
+
   c->size = cachesize;
 
-  c->hsize = 4;
-  while (c->hsize <= (c->size >> 5)) c->hsize <<= 1;
+  c->hsize = hsize;
 
-  c->x = mem;
-  byte_zero(c->x,c->size);
+  c->x = table;
+  byte_zero(c->x,c->hsize);
+
+  c->y = entries;
+  byte_zero(entries,c->size - c->hsize);
 
   c->writer = c->hsize;
   c->oldest = c->size;
@@ -264,6 +290,7 @@ char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int
 
   if (!c) return 0;
   if (!c->x) return 0;
+  if (!c->y) return 0;
   if (keylen > MAXKEYLEN) return 0;
 
   prevpos = hash(c,key,keylen);
@@ -273,8 +300,8 @@ char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int
   while (pos) {
     if (get4(c,pos + 4) == keylen) {
       if (pos + 20 + keylen > c->size) cache_impossible();
-      if (byte_equal(key,keylen,c->x + pos + 20)) {
-        tai_unpack(c->x + pos + 12,&expire);
+      if (byte_equal(key,keylen,get_address(c,pos) + 20)) {
+        tai_unpack(get_address(c,pos) + 12,&expire);
         tai_now(&now);
         if (tai_less(&expire,&now)) return 0;
 
@@ -287,7 +314,7 @@ char *cache_t_get(cache_t cache,const char *key,unsigned int keylen,unsigned int
         if (u > c->size - pos - 20 - keylen) cache_impossible();
         *datalen = u;
 
-        return c->x + pos + 20 + keylen;
+        return get_address(c,pos) + 20 + keylen;
       }
     }
     nextpos = prevpos ^ get4(c,pos);
@@ -314,6 +341,7 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
 
   if (!c) return;
   if (!c->x) return;
+  if (!c->y) return;
   if (keylen > MAXKEYLEN) return;
   if (datalen > MAXDATALEN) return;
 
@@ -356,9 +384,9 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
   set4(c,c->writer,pos ^ keyhash);
   set4(c,c->writer + 4,keylen);
   set4(c,c->writer + 8,datalen);
-  tai_pack(c->x + c->writer + 12,&expire);
-  byte_copy(c->x + c->writer + 20,keylen,key);
-  byte_copy(c->x + c->writer + 20 + keylen,datalen,data);
+  tai_pack(get_address(c,c->writer) + 12,&expire);
+  byte_copy(get_address(c,c->writer) + 20,keylen,key);
+  byte_copy(get_address(c,c->writer) + 20 + keylen,datalen,data);
 
   if (ttl > c->cycle.max_ttl) c->cycle.max_ttl = ttl;
 
@@ -394,7 +422,7 @@ int cache_t_init(cache_t cache,unsigned int cachesize,cache_options_t *options) 
   return init((struct cache *)cache,cachesize,options);
 }
 
-/*
+/*:
  * Destroy cache, freeing all allocated memory.
  */
 void cache_t_destroy(cache_t cache) {
@@ -403,6 +431,9 @@ void cache_t_destroy(cache_t cache) {
 
   if (c->x) {
     alloc_free(c->x);
+  }
+  if (c->y) {
+    alloc_free(c->y);
   }
   alloc_free(c);
 }
