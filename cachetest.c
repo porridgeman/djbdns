@@ -5,34 +5,13 @@
 #include "alloc.h"
 #include "byte.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 static int failure_count = 0;
 static int resized = 0;
 static unsigned int current_size = 0;
-
-static void string(const char *s)
-{
-  buffer_puts(buffer_1,s);
-}
-
-static void integer(const int i)
-{
-  char s[20];
-  sprintf(s,"%d",i);
-  buffer_puts(buffer_1,s);
-}
-
-static void line(void)
-{
-  string("\n");
-  buffer_flush(buffer_1);
-}
-
-static void space(void)
-{
-  string(" ");
-}
 
 static void set(const char *key, const char *data,uint32 ttl) {
   cache_set(key,str_len(key),data,str_len(data)+1,ttl);
@@ -74,10 +53,17 @@ static void get_and_test(const char *key, const char *expected) {
 
 #define TEST_DATA "206.190.36.45"
 #define TEST_KEY "XXXXXXXXXX.test.com"
-static char *test_key(int i) {
+static char *test_key() {
   static char keybuf[sizeof(TEST_KEY)];
-  sprintf(keybuf, "%010d.test.com", i);
+  static  unsigned int i = 0;
+  sprintf(keybuf, "%010u.test.com", ++i);
   return keybuf;
+}
+
+static uint32 ttl(uint32 max_ttl)
+{
+  /* return a random ttl between max_ttl / 2 and max_ttl, inclusive */
+  return (rand() % (max_ttl / 2 + 1)) + (max_ttl / 2);
 }
 
 static int get_cycle_size(unsigned int cachesize)
@@ -96,7 +82,7 @@ static int get_cycle_size(unsigned int cachesize)
   set_t(cache,TEST_KEY,TEST_DATA,86400);
 
   /* set entries in the cache until the initial entry is overwritten */
-  for (size = 0; get_t(cache,TEST_KEY); size++) set_t(cache,test_key(size),TEST_DATA,86400);
+  for (size = 0; get_t(cache,TEST_KEY); size++) set_t(cache,test_key(),TEST_DATA,86400);
 
   cache_t_destroy(cache);
 
@@ -112,66 +98,75 @@ static void resize_callback(double ratio,uint32 oldsize,uint32 newsize,int succe
   resized = 1;
 }
 
-static void test_resize()
+static void resize_test(cache_options *options,uint32 max_ttl)
 {
   int i;
-  int total;
+  int expected;
   int cycle_size;
-  cache_options options = {
-    TARGET_CYCLE_TIME, /* allow resize, use target_cycle_time */
-    5,                /* target_cycle_time */
-    resize_callback
-  };
-
-  //cycle_size = get_cycle_size(1000);
 
   current_size = 1000;
 
-  if (!cache_init(current_size, &options)) _exit(111);
+  if (!cache_init(current_size, options)) _exit(111);
 
-  total = 0;
-
-  printf("\nadd entries at 1000 per second (should grow by quite a bit)\n");
-  for (i = 0; i < 10000 && !resized; i++,total++) {
+  printf("\nadd entries at 1000 per second (should grow by a lot)\n");
+  expected = 1;
+  for (i = 0; i < 10000 && !resized; i++) {
     usleep(1000); /* add 1000 per second */
-    set(test_key(total),TEST_DATA,86400);
+    set(test_key(),TEST_DATA,ttl(max_ttl));
   }
-  printf("resized = %d\n",resized);
+  if (resized != expected) printf("*** failure *** was %sexpected to resize\n",expected ? " " : "not ");
   resized = 0;
   cycle_size = get_cycle_size(current_size);
-  printf("cycle size for current size %d is %d\n",current_size,cycle_size);
 
 
   printf("\nadd 2 cycles at 1000 per second (shouldn't resize)\n");
-  for (i = 0; i < cycle_size * 2 && !resized; i++,total++) {
+  expected = 0;
+  for (i = 0; i < cycle_size * 2 && !resized; i++) {
     usleep(1000); /* add 1000 per second */
-    set(test_key(total),TEST_DATA,86400);
+    set(test_key(),TEST_DATA,ttl(max_ttl));
   }
-  printf("resized = %d\n",resized);
+  if (resized != expected) printf("*** failure *** was %sexpected to resize\n",expected ? " " : "not ");
   resized = 0;
   cycle_size = get_cycle_size(current_size);
-  printf("cycle size for current size %d is %d\n",current_size,cycle_size);
 
 
-  printf("\nadd 2 cycles at < 500 per second (should shrink to about half)\n");
-  for (i = 0; i < cycle_size * 2 && !resized; i++,total++) {
+  printf("\nadd 2 cycles at < 500 per second (should shrink by about half)\n");
+  expected = 1;
+  for (i = 0; i < cycle_size * 2 && !resized; i++) {
     usleep(2100); /* add less than 500 per second */
-    set(test_key(total),TEST_DATA,86400);
+    set(test_key(),TEST_DATA,ttl(max_ttl));
   }
-  printf("resized = %d\n",resized);
+  if (resized != expected) printf("*** failure *** was %sexpected to resize\n",expected ? " " : "not ");
   resized = 0;
   cycle_size = get_cycle_size(current_size);
-  printf("cycle size for current size %d is %d\n",current_size,cycle_size);
 
-  printf("\nadd 2 cycles at 1000 per second (should roughly double)\n");
-  for (i = 0; i < cycle_size * 2 && !resized; i++,total++) {
+
+  printf("\nadd 2 cycles at 1000 per second (should grow to roughly double)\n");
+  expected = 1;
+  for (i = 0; i < cycle_size * 2 && !resized; i++) {
     usleep(1000); /* add 1000 per second */
-    set(test_key(total),TEST_DATA,86400);
+    set(test_key(),TEST_DATA,ttl(max_ttl));
   }
-  printf("resized = %d\n",resized);
+  if (resized != expected) printf("*** failure *** was %sexpected to resize\n",expected ? " " : "not ");
   resized = 0;
   cycle_size = get_cycle_size(current_size);
-  printf("cycle size for current size %d is %d\n",current_size,cycle_size);
+}
+
+static cache_options *get_options(resize_mode_t resize_mode,uint32 target_cycle_time,
+  void (*resize_callback)(double,uint32,uint32,int))
+{
+  static cache_options options;
+
+  options.resize_mode = resize_mode;
+  options.target_cycle_time = target_cycle_time;
+  options.resize_callback = resize_callback;
+
+  return &options;
+}
+
+static void test_resize()
+{
+  resize_test(get_options(TARGET_CYCLE_TIME,5,resize_callback),86400);
 }
 
 int main(int argc,char **argv)
@@ -181,6 +176,8 @@ int main(int argc,char **argv)
   char *y;
   unsigned int u;
   uint32 ttl;
+
+  srand(time(NULL));
 
   if (!cache_init(200,0)) _exit(111);
 
