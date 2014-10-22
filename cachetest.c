@@ -37,20 +37,6 @@ static char *get_t(cache_t cache,const char *key) {
   return cache_t_get(cache,key,str_len(key),&datalen,&ttl,0);
 }
 
-static void get_and_test(const char *key, const char *expected) {
-  char *data;
-
-  data = get(key);
-
-  string("  cache_get "); string(key); space();
-  string(data ? data : "0"); line();
-
-  if ((!expected && data) || (expected && !data) || (data && expected && str_diff(data,expected))) {
-    string("*** failure ***   expected: "); string(expected ? expected : "0"); line(); 
-    failure_count++;
-  }
-}
-
 #define TEST_DATA "206.190.36.45"
 #define TEST_KEY "XXXXXXXXXX.test.com"
 static char *test_key() {
@@ -102,62 +88,8 @@ static void resize_callback(double ratio,double cycle_time,uint32 oldsize,uint32
   resized = 1;
 }
 
-static void resize_test(cache_options_t *options,uint32 max_ttl)
-{
-  int i;
-  int expected;
-  int cycle_size;
-
-  current_size = 1000;
-
-  if (!cache_init(current_size, options)) _exit(111);
-
-  printf("\n  add entries at 1000 per second (should grow by a lot)\n");
-  expected = 1;
-  for (i = 0; i < 10000 && !resized; i++) {
-    usleep(1000); /* add 1000 per second */
-    set(test_key(),TEST_DATA,ttl(max_ttl));
-  }
-  if (resized != expected) printf("\n    * was %sexpected to resize\n",expected ? " " : "not ");
-  resized = 0;
-  cycle_size = get_cycle_size(current_size);
-
-
-  printf("\n  add 2 cycles at 1000 per second (shouldn't resize, at least not by much)\n");
-  expected = 0;
-  for (i = 0; i < cycle_size * 2 && !resized; i++) {
-    usleep(1000); /* add 1000 per second */
-    set(test_key(),TEST_DATA,ttl(max_ttl));
-  }
-  if (resized != expected) printf("\n    * was %sexpected to resize\n",expected ? " " : "not ");
-  resized = 0;
-  cycle_size = get_cycle_size(current_size);
-
-
-  printf("\n  add 2 cycles at < 500 per second (should shrink by about half)\n");
-  expected = 1;
-  for (i = 0; i < cycle_size * 2 && !resized; i++) {
-    usleep(2100); /* add less than 500 per second */
-    set(test_key(),TEST_DATA,ttl(max_ttl));
-  }
-  if (resized != expected) printf("\n    * was %sexpected to resize\n",expected ? " " : "not ");
-  resized = 0;
-  cycle_size = get_cycle_size(current_size);
-
-
-  printf("\n  add 2 cycles at 1000 per second (should grow to roughly double)\n");
-  expected = 1;
-  for (i = 0; i < cycle_size * 2 && !resized; i++) {
-    usleep(1000); /* add 1000 per second */
-    set(test_key(),TEST_DATA,ttl(max_ttl));
-  }
-  if (resized != expected) printf("\n    * was %sexpected to resize\n",expected ? " " : "not ");
-  resized = 0;
-  cycle_size = get_cycle_size(current_size);
-}
-
 static cache_options_t *get_options(resize_mode_t resize_mode,uint32 target_cycle_time,
-  void (*resize_callback)(double,uint32,uint32,int))
+  void (*resize_callback)(double,double,uint32,uint32,int))
 {
   static cache_options_t options;
 
@@ -168,6 +100,60 @@ static cache_options_t *get_options(resize_mode_t resize_mode,uint32 target_cycl
   return &options;
 }
 
+static int cycle_size;
+static void add_entries(int cycles,int expected,useconds_t sleep_time,uint32 max_ttl)
+{
+  int i;
+  int num_entries;
+
+  num_entries = cycles * cycle_size;
+
+  for (i = 0; i < num_entries && !resized; i++) {
+    usleep(sleep_time);
+    set(test_key(),TEST_DATA,ttl(max_ttl));
+  }
+  if (resized != expected) printf("\n    * was %sexpected to resize\n",expected ? " " : "not ");
+  resized = 0;
+  cycle_size = get_cycle_size(current_size);
+}
+
+static void resize_test(cache_options_t *options,uint32 max_ttl)
+{
+  int i;
+  int expected;
+
+  current_size = 1000;
+
+  if (!cache_init(current_size, options)) _exit(111);
+
+  printf("\n  add entries at 1000 per second (should grow by a lot)\n");
+  cycle_size = get_cycle_size(current_size);
+  add_entries(3,1,1000,max_ttl);
+
+  printf("\n  add 2 cycles at 1000 per second (shouldn't resize)\n");
+  add_entries(2,0,1000,max_ttl);
+
+  printf("\n  add 2 cycles at < 500 per second (should shrink by about half)\n");
+  add_entries(2,1,2100,max_ttl);
+
+  printf("\n  add 2 cycles at 1000 per second (should grow to roughly double)\n");
+  add_entries(2,1,1000,max_ttl);
+}
+
+static void no_resize_test()
+{
+  int i;
+  int expected;
+
+  current_size = 1000;
+
+  if (!cache_init(current_size, get_options(NONE,0,0))) _exit(111);
+
+  printf("\n  add 100 cycles at 1000 per second (shouldn't resize)\n");
+  cycle_size = get_cycle_size(current_size);
+  add_entries(100,0,1000,86400);
+}
+
 static void test_resize()
 {
   printf("\n\ntesting with resize mode TARGET_CYCLE_TIME, target cycle time should be 5\n");
@@ -175,6 +161,9 @@ static void test_resize()
 
   printf("\n\ntesting with resize mode MAX_TTL, target cycle time should be 6\n");
   resize_test(get_options(MAX_TTL,0,resize_callback),6);
+
+  printf("\n\ntesting with resize mode NONE, should not resize\n");
+  no_resize_test();
 
   printf("\nresize tests complete\n");
 }
