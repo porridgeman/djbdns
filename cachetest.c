@@ -83,6 +83,7 @@ static void resize_callback(double ratio,double cycle_time,uint32 oldsize,uint32
   printf("    newsize = %u\n",newsize);
   printf("    target cycle time = %lf\n",ratio * cycle_time);
   printf("    %s\n",success ? "success" : "failure");
+  fflush(stdout);
 
   current_size = newsize;
   resized = 1;
@@ -126,7 +127,7 @@ static void resize_test(cache_options_t *options,uint32 max_ttl)
 
   if (!cache_init(current_size, options)) _exit(111);
 
-  printf("\n  add entries at 1000 per second (should grow by a lot)\n");
+  printf("\n  add entries at 1000 per second (should grow by well over 200 times)\n");
   cycle_size = get_cycle_size(current_size);
   add_entries(3,1,1000,max_ttl);
 
@@ -166,6 +167,7 @@ static void test_resize()
   no_resize_test();
 
   printf("\nresize tests complete\n");
+  fflush(stdout);
 }
 
 int main(int argc,char **argv)
