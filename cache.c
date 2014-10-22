@@ -28,7 +28,7 @@ struct cache {
       uint64 total;
     } ttl;
   } cycle;
-  cache_options options;
+  cache_options_t options;
 };
 
 static struct cache *default_cache = 0;
@@ -101,7 +101,7 @@ static unsigned int hash(struct cache *c,const char *key,unsigned int keylen)
   return result;
 }
 
-static int init(struct cache *c,unsigned int cachesize,cache_options *options)
+static int init(struct cache *c,unsigned int cachesize,cache_options_t *options)
 {
   char *mem;
 
@@ -132,7 +132,7 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   c->cycle.last_ratio = 0.0;
 
   if (options) {
-    byte_copy(&c->options,sizeof(cache_options),options);
+    byte_copy(&c->options,sizeof(cache_options_t),options);
   } else {
     c->options.resize_mode = TARGET_CYCLE_TIME;
     c->options.target_cycle_time = DEFAULT_TARGET_CYCLE_TIME;
@@ -406,7 +406,7 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
  * Create and return cache, cachesize is total size to allocate
  * in bytes (not including size of struct cache)
  */
-cache_t cache_t_new(unsigned int cachesize,cache_options *options) {
+cache_t cache_t_new(unsigned int cachesize,cache_options_t *options) {
 
   struct cache *c = (struct cache *)alloc(sizeof(struct cache));
   byte_zero(c,sizeof(struct cache));
@@ -421,7 +421,7 @@ cache_t cache_t_new(unsigned int cachesize,cache_options *options) {
 /*
  * Re-initialize existing cache.
  */
-int cache_t_init(cache_t cache,unsigned int cachesize,cache_options *options) {
+int cache_t_init(cache_t cache,unsigned int cachesize,cache_options_t *options) {
   if (!cache) return 0;
   return init((struct cache *)cache,cachesize,options);
 }
@@ -449,7 +449,7 @@ void cache_set(const char *key,unsigned int keylen,const char *data,unsigned int
   cache_t_set(default_cache, key, keylen, data, datalen, ttl);
 }
 
-int cache_init(unsigned int cachesize,cache_options *options)
+int cache_init(unsigned int cachesize,cache_options_t *options)
 {
   if (!default_cache) {
     default_cache = cache_t_new(cachesize,options);

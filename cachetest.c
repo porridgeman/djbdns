@@ -98,7 +98,7 @@ static void resize_callback(double ratio,uint32 oldsize,uint32 newsize,int succe
   resized = 1;
 }
 
-static void resize_test(cache_options *options,uint32 max_ttl)
+static void resize_test(cache_options_t *options,uint32 max_ttl)
 {
   int i;
   int expected;
@@ -152,10 +152,10 @@ static void resize_test(cache_options *options,uint32 max_ttl)
   cycle_size = get_cycle_size(current_size);
 }
 
-static cache_options *get_options(resize_mode_t resize_mode,uint32 target_cycle_time,
+static cache_options_t *get_options(resize_mode_t resize_mode,uint32 target_cycle_time,
   void (*resize_callback)(double,uint32,uint32,int))
 {
-  static cache_options options;
+  static cache_options_t options;
 
   options.resize_mode = resize_mode;
   options.target_cycle_time = target_cycle_time;
