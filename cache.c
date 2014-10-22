@@ -136,6 +136,94 @@ static int init(struct cache *c,unsigned int cachesize,cache_options_t *options)
   return 1;
 }
 
+static int resize_cache(struct cache *c,unsigned int newsize)
+{
+  struct cache *new;
+  unsigned int keylen;
+  char *key;
+  unsigned int datalen;
+  char *data;
+  struct tai expire;
+  struct tai now;
+  uint32 ttl;
+  uint32 pos;
+  uint32 end;
+  resize_mode_t saved_mode;
+
+  printf("*** resizing\n");fflush(stdout);
+
+  /* is cache empty? */
+  if (c->writer == c->hsize) {
+    return init(c,newsize,&c->options);
+  }
+
+  new = (struct cache *)cache_t_new(newsize,&c->options);
+  if (!new) return 0;
+
+  saved_mode = new->options.resize_mode;
+  new->options.resize_mode = NONE;
+
+  pos = c->oldest == c->unused ? c->hsize : c->oldest;
+  end = c->unused;
+
+  printf("c->hsize %d\n",c->hsize);fflush(stdout);
+  printf("c->oldest %d\n",c->oldest);fflush(stdout);
+  printf("c->unused %d\n",c->unused);fflush(stdout);
+  printf("pos %d\n",pos);fflush(stdout);
+  printf("end %d\n",end);fflush(stdout);
+
+  while (pos < end) {
+
+    keylen = get4(c,pos + 4);
+    key = c->x + pos + 20;
+
+    tai_unpack(c->x + pos + 12,&expire);
+    tai_now(&now);
+
+    if (tai_less(&now,&expire)) {
+      tai_sub(&expire,&expire,&now);
+      ttl = tai_approx(&expire);
+
+      datalen = get4(c,pos + 8);
+      if (datalen > c->size - pos - 20 - keylen) cache_impossible();
+
+      data = c->x + pos + 20 + keylen;
+
+      cache_t_set(new,key,keylen,data,datalen,ttl);
+    }
+
+    pos += keylen + datalen + 20;
+//printf("pos %d\n",pos);fflush(stdout);
+    if (pos >= c->unused && c->oldest != c->unused) {
+      printf("hey!\n");fflush(stdout);
+      pos = c->hsize;
+      end = c->writer;
+    }
+
+  }
+
+  new->options.resize_mode = saved_mode;
+
+  if (c->x) {
+    alloc_free(c->x);
+  }
+
+  /* update old cache structure with new cacahe data */
+  byte_copy(c,sizeof(struct cache),new);
+
+  /* delete new cache structure */
+  alloc_free(new);
+
+  printf("*** done resizing\n");fflush(stdout);
+
+  return 1;
+}
+
+int cache_t_resize(cache_t cache,unsigned int newsize)
+{
+  return resize_cache((struct cache *)cache,newsize);
+}
+
 /*
  * Determine target cycle time based on config options.
  */
@@ -230,7 +318,8 @@ static int check_for_resize(struct cache *c)
 
     if (resize) {
       oldsize = c->size; /* the init call will modify c->size */
-      resize = init(c,newsize,&c->options);
+      //resize = init(c,newsize,&c->options);
+      resize = resize_cache(c,newsize);
       if (c->options.resize_callback) {
         (*c->options.resize_callback)(ratio,cycle_time,oldsize,newsize,resize);
       }

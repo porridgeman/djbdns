@@ -33,5 +33,6 @@ extern void cache_t_destroy(cache_t);
 extern void cache_t_set(cache_t,const char *,unsigned int,const char *,unsigned int,uint32);
 extern char *cache_t_get(cache_t,const char *,unsigned int,unsigned int *,uint32 *,struct tai *);
 extern int cache_t_init(cache_t,unsigned int,cache_options_t *);
+extern int cache_t_resize(cache_t,unsigned int);
 
 #endif
