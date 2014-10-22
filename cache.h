@@ -17,6 +17,7 @@ typedef struct cache_options {
 	resize_mode_t resize_mode;       /* default is TARGET_CYCLE_TIME */
 	uint32 target_cycle_time;        /* in seconds, default is 86400 (24 hours) */
 	void (*resize_callback)(double,  /* resize ratio */
+							double,  /* cycle time */
 							uint32,  /* old size */
 							uint32,  /* new size */
 							int);    /* 1 if resize was successful, 0 if not */

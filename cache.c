@@ -264,7 +264,7 @@ static int check_for_resize(struct cache *c)
       oldsize = c->size; /* the init call will modify c->size */
       resize = init(c,newsize,&c->options);
       if (c->options.resize_callback) {
-        (*c->options.resize_callback)(ratio,oldsize,newsize,resize);
+        (*c->options.resize_callback)(ratio,cycle_time,oldsize,newsize,resize);
       }
       if (resize) return 1;
     }
