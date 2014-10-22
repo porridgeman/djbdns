@@ -141,6 +141,9 @@ static int init(struct cache *c,unsigned int cachesize,cache_options *options)
   return 1;
 }
 
+/*
+ * Update TTL stats for current cycle, min and max are both initially 0 so check for that.
+ */
 static void cycle_stats_add_ttl(struct cache *c,uint32 ttl)
 {
   c->cycle.ttl.count++;
@@ -149,11 +152,17 @@ static void cycle_stats_add_ttl(struct cache *c,uint32 ttl)
   if (c->cycle.ttl.min == 0 || ttl < c->cycle.ttl.min) c->cycle.ttl.min = ttl;
 }
 
+/*
+ * Clear TTL stats, should be called at end of cycle (after using the stats).
+ */
 static void cycle_stats_clear_ttl(struct cache *c)
 {
   byte_zero(&c->cycle.ttl,sizeof(struct ttl_stats));
 }
 
+/*
+ * Determine target cycle time based on config options.
+ */
 static double get_target_cycle_time(struct cache *c)
 {
   uint32 target = 0;
@@ -184,14 +193,25 @@ static double get_target_cycle_time(struct cache *c)
   return (double)target;
 }
 
+/*
+ * Determine whether cache should be resized. This is by calculating the ratio of the
+ * target cycle time to the actual cycle time.
+ *
+ * This function takes the last actual cycle time as input and returns the calculated ratio
+ * and new size by reference. The return value is a flag indicating whether the cache should
+ * be resized.
+ */
 static int should_resize(struct cache *c,double cycle_time,double *ratio,unsigned int *newsize)
 {
   int resize = 0;
   double target_cycle_time;
 
+  *ratio = 0;
+  *newsize = 0;
+
   target_cycle_time = get_target_cycle_time(c);
 
-  if (target_cycle_time) {
+  if (target_cycle_time && cycle_time) {
 
     *ratio = target_cycle_time / cycle_time;
 
@@ -201,7 +221,8 @@ static int should_resize(struct cache *c,double cycle_time,double *ratio,unsigne
 
     /*
      * Only consider resize if ratio has been high or low for two cycles in a row, to try
-     * and avoid volatility in cache resizing from a spike or lull. 
+     * and avoid volatility in cache resizing from a spike or lull. Also, don't bother 
+     * resizing if the current size is already at the defined limit.
      */ 
     if (c->cycle.last_ratio) {
       resize = (*ratio > 1.0 && c->cycle.last_ratio > 1.0 && c->size < MAXCACHESIZE)
@@ -212,6 +233,10 @@ static int should_resize(struct cache *c,double cycle_time,double *ratio,unsigne
   return resize;
 }
 
+/*
+ * Check whether cache should be resized, and if so, resize it. Returns 1 if cache
+ * was resized, 0 otherwise.
+ */
 static int check_for_resize(struct cache *c)
 {
   struct taia now;
@@ -245,6 +270,7 @@ static int check_for_resize(struct cache *c)
     }
   }
 
+  cycle_stats_clear_ttl(c);
   taia_now(&c->cycle.start);
 
   return 0;
@@ -390,14 +416,6 @@ cache_t cache_t_new(unsigned int cachesize,cache_options *options) {
   }
 
   return 0;
-}
-
-void cache_set_options(cache_options options)
-{
-  // TODO this is not ideal, could be misleading if someone sets options first
-  if (default_cache) {
-    byte_copy(default_cache->options,sizeof(cache_options),&options);
-  }
 }
 
 /*
