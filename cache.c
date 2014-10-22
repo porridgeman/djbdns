@@ -21,12 +21,7 @@ struct cache {
   struct {
     struct taia start;
     double last_ratio;
-    struct ttl_stats {
-      uint32 max;
-      uint32 min;
-      uint32 count;
-      uint64 total;
-    } ttl;
+    uint32 max_ttl;
   } cycle;
   cache_options_t options;
 };
@@ -142,25 +137,6 @@ static int init(struct cache *c,unsigned int cachesize,cache_options_t *options)
 }
 
 /*
- * Update TTL stats for current cycle, min and max are both initially 0 so check for that.
- */
-static void cycle_stats_add_ttl(struct cache *c,uint32 ttl)
-{
-  c->cycle.ttl.count++;
-  c->cycle.ttl.total += ttl;
-  if (c->cycle.ttl.max == 0 || ttl > c->cycle.ttl.max) c->cycle.ttl.max = ttl;
-  if (c->cycle.ttl.min == 0 || ttl < c->cycle.ttl.min) c->cycle.ttl.min = ttl;
-}
-
-/*
- * Clear TTL stats, should be called at end of cycle (after using the stats).
- */
-static void cycle_stats_clear_ttl(struct cache *c)
-{
-  byte_zero(&c->cycle.ttl,sizeof(struct ttl_stats));
-}
-
-/*
  * Determine target cycle time based on config options.
  */
 static double get_target_cycle_time(struct cache *c)
@@ -173,16 +149,8 @@ static double get_target_cycle_time(struct cache *c)
     target = c->options.target_cycle_time;
     break; 
 
-    case MIN_TTL:
-    target = c->cycle.ttl.min;
-    break;
-
     case MAX_TTL:
-    target = c->cycle.ttl.max;
-    break;
-
-    case AVG_TTL:
-    target = c->cycle.ttl.count ? c->cycle.ttl.total / c->cycle.ttl.count : 0;
+    target = c->cycle.max_ttl;
     break;
 
     default:
@@ -270,7 +238,7 @@ static int check_for_resize(struct cache *c)
     }
   }
 
-  cycle_stats_clear_ttl(c);
+  c->cycle.max_ttl = 0;
   taia_now(&c->cycle.start);
 
   return 0;
@@ -392,7 +360,7 @@ void cache_t_set(cache_t cache,const char *key,unsigned int keylen,const char *d
   byte_copy(c->x + c->writer + 20,keylen,key);
   byte_copy(c->x + c->writer + 20 + keylen,datalen,data);
 
-  cycle_stats_add_ttl(c,ttl);
+  if (ttl > c->cycle.max_ttl) c->cycle.max_ttl = ttl;
 
   set4(c,keyhash,c->writer);
   c->writer += entrylen;

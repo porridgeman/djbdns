@@ -8,9 +8,7 @@
 typedef enum {
 	NONE,                 /* disable auto resizing */
 	TARGET_CYCLE_TIME,    /* use value of target_cycle_time */
-	MIN_TTL,              /* use minimum TTL for last cycle as target cycle time */
-	MAX_TTL,              /* use maximum TTL for last cycle as target cycle time */
-	AVG_TTL               /* use average TTL for last cycle as target cycle time */
+	MAX_TTL               /* use maximum TTL for last cycle as target cycle time */
 } resize_mode_t;
 
 typedef struct cache_options {

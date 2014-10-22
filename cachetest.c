@@ -173,14 +173,8 @@ static void test_resize()
   printf("\n\ntesting with resize mode TARGET_CYCLE_TIME, target cycle time should be 5\n");
   resize_test(get_options(TARGET_CYCLE_TIME,5,resize_callback),86400);
 
-  printf("\n\ntesting with resize mode MIN_TTL, target cycle time should be 3\n");
-  resize_test(get_options(MIN_TTL,0,resize_callback),6);
-
   printf("\n\ntesting with resize mode MAX_TTL, target cycle time should be 6\n");
   resize_test(get_options(MAX_TTL,0,resize_callback),6);
-
-  printf("\n\ntesting with resize mode AVG_TTL, target cycle time should be about 4.5\n");
-  resize_test(get_options(AVG_TTL,0,resize_callback),6);
 
   printf("\nresize tests complete\n");
 }
