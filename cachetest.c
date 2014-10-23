@@ -168,6 +168,33 @@ static void test_resize()
   printf("\nresize tests complete\n");
 }
 
+static void do_resize(unsigned int cachesize)
+{
+  int size;
+  cache_t cache;
+
+  cache = cache_t_new(cachesize, 0);
+
+  if (!cache) {
+    printf("failed creating cache of size %d\n",cachesize);
+    _exit(111);
+  }
+
+  /* set initial entry in the cache */
+  set_t(cache,TEST_KEY,TEST_DATA,86400);
+
+  /* set entries in the cache until the initial entry is overwritten */
+  for (size = 0; get_t(cache,TEST_KEY); size++) set_t(cache,test_key(),TEST_DATA,86400);
+
+  set_t(cache,test_key(),TEST_DATA,86400);
+  set_t(cache,test_key(),TEST_DATA,86400);
+  set_t(cache,test_key(),TEST_DATA,86400);
+
+  cache_t_resize(cache,cachesize/2);
+
+  cache_t_destroy(cache);
+}
+
 int main(int argc,char **argv)
 {
   int i;

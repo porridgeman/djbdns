@@ -150,8 +150,6 @@ static int resize_cache(struct cache *c,unsigned int newsize)
   uint32 end;
   resize_mode_t saved_mode;
 
-  printf("*** resizing\n");fflush(stdout);
-
   /* is cache empty? */
   if (c->writer == c->hsize) {
     return init(c,newsize,&c->options);
@@ -163,43 +161,40 @@ static int resize_cache(struct cache *c,unsigned int newsize)
   saved_mode = new->options.resize_mode;
   new->options.resize_mode = NONE;
 
-  pos = c->oldest == c->unused ? c->hsize : c->oldest;
-  end = c->unused;
-
-  printf("c->hsize %d\n",c->hsize);fflush(stdout);
-  printf("c->oldest %d\n",c->oldest);fflush(stdout);
-  printf("c->unused %d\n",c->unused);fflush(stdout);
-  printf("pos %d\n",pos);fflush(stdout);
-  printf("end %d\n",end);fflush(stdout);
+  if (c->oldest == c->unused) {
+    pos = c->hsize;
+    end = c->writer;
+  } else {
+    pos = c->oldest;
+    end = c->unused;
+  }
 
   while (pos < end) {
 
     keylen = get4(c,pos + 4);
     key = c->x + pos + 20;
 
+    datalen = get4(c,pos + 8);
+    if (datalen > c->size - pos - 20 - keylen) cache_impossible();
+    data = c->x + pos + 20 + keylen;
+
     tai_unpack(c->x + pos + 12,&expire);
     tai_now(&now);
 
     if (tai_less(&now,&expire)) {
+
       tai_sub(&expire,&expire,&now);
       ttl = tai_approx(&expire);
-
-      datalen = get4(c,pos + 8);
-      if (datalen > c->size - pos - 20 - keylen) cache_impossible();
-
-      data = c->x + pos + 20 + keylen;
 
       cache_t_set(new,key,keylen,data,datalen,ttl);
     }
 
     pos += keylen + datalen + 20;
-//printf("pos %d\n",pos);fflush(stdout);
+
     if (pos >= c->unused && c->oldest != c->unused) {
-      printf("hey!\n");fflush(stdout);
       pos = c->hsize;
       end = c->writer;
     }
-
   }
 
   new->options.resize_mode = saved_mode;
@@ -213,8 +208,6 @@ static int resize_cache(struct cache *c,unsigned int newsize)
 
   /* delete new cache structure */
   alloc_free(new);
-
-  printf("*** done resizing\n");fflush(stdout);
 
   return 1;
 }
