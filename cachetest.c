@@ -190,7 +190,7 @@ static void do_resize(unsigned int cachesize)
   set_t(cache,test_key(),TEST_DATA,86400);
   set_t(cache,test_key(),TEST_DATA,86400);
 
-  cache_t_resize(cache,cachesize/2);
+  cache_t_resize(cache,cachesize*2);
 
   cache_t_destroy(cache);
 }
